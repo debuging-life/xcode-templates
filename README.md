@@ -191,7 +191,30 @@ with an *AI Suggestion* template:
 3. **`ai.api_key` in setup()** — a string, or a function that reads your password
    manager / Keychain (example below).
 
-Resolution order: `ai.api_key` → `$ANTHROPIC_API_KEY` → `ant auth login` profile. Choosing it inserts the Xcode header plus a placeholder,
+Resolution order: `ai.api_key` → `$ANTHROPIC_API_KEY` → `ant auth login` profile.
+
+### Inline suggestions & selection actions
+
+Beyond drafting whole files, the same credentials power in-editor assistance:
+
+| Action | How | Result |
+|---|---|---|
+| **Implement a comment** | write `// build a two sum function`, press `<C-x><C-a>` (insert or normal mode) or run `:XcodeSuggest` | the function appears as ghost text below the comment — `Tab` accepts, `Ctrl-e` dismisses |
+| **Complete at cursor** | trigger the same key mid-statement / mid-function | Claude finishes the current construct as ghost text |
+| **Ask about a selection** | visually select code → `:'<,'>XcodeAI` (prompts) or `:'<,'>XcodeAI review this for retain cycles` | answer opens in a float — `a` applies it as a replacement for the selection, `y` yanks, `q` closes |
+
+Suggested extra mappings (LazyVim):
+
+```lua
+keys = {
+  { "<leader>ia", function() require("xcode-templates").suggest() end, desc = "AI Complete at Cursor" },
+  { "<leader>ia", function() require("xcode-templates").ask() end, mode = "x", desc = "AI Ask About Selection" },
+},
+```
+
+Configure under `ai.suggest`: `keymap` (default `<C-x><C-a>`, `false` to disable),
+`max_tokens` (4096), `context_before` (120 lines), `context_after` (40 lines).
+Suggestions are manual-trigger by design — no keystroke-by-keystroke API calls. Choosing it inserts the Xcode header plus a placeholder,
 then asynchronously asks Claude to draft the file using the file name, the detected
 intent (`FooViewModel` → view model, etc.), the project name, and the names of the
 sibling Swift files in the folder. `:XcodeTemplate ai-suggest` triggers it directly.

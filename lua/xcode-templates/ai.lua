@@ -165,16 +165,17 @@ function M.parse_response(body)
   return lines
 end
 
----Ask Claude to draft the file (async). cb(lines|nil, err|nil) runs on the main loop.
----@param ctx table template context
+---Low-level Messages API call shared by file drafting and inline suggestions.
+---cb(lines|nil, err|nil) runs on the main loop.
 ---@param config XcodeTemplates.Config
----@param hint string|nil detected template id
+---@param system string
+---@param user string
+---@param max_tokens integer|nil defaults to `ai.max_tokens`
 ---@param cb fun(lines: string[]|nil, err: string|nil)
-function M.generate(ctx, config, hint, cb)
-  local system, user = M.build_prompt(ctx, M.siblings(ctx.path, config.ai.context_files), hint)
+local function api_call(config, system, user, max_tokens, cb)
   local request = {
     model = config.ai.model,
-    max_tokens = config.ai.max_tokens,
+    max_tokens = max_tokens or config.ai.max_tokens,
     system = system,
     messages = { { role = "user", content = user } },
   }
@@ -219,6 +220,26 @@ function M.generate(ctx, config, hint, cb)
       cb(nil, "could not start curl: " .. tostring(err))
     end
   end)
+end
+
+---Ask Claude to draft a whole file (async). cb(lines|nil, err|nil) on the main loop.
+---@param ctx table template context
+---@param config XcodeTemplates.Config
+---@param hint string|nil detected template id
+---@param cb fun(lines: string[]|nil, err: string|nil)
+function M.generate(ctx, config, hint, cb)
+  local system, user = M.build_prompt(ctx, M.siblings(ctx.path, config.ai.context_files), hint)
+  api_call(config, system, user, config.ai.max_tokens, cb)
+end
+
+---Free-form completion request (used by inline suggestions).
+---@param system string
+---@param user string
+---@param config XcodeTemplates.Config
+---@param max_tokens integer|nil
+---@param cb fun(lines: string[]|nil, err: string|nil)
+function M.complete(system, user, config, max_tokens, cb)
+  api_call(config, system, user, max_tokens, cb)
 end
 
 return M

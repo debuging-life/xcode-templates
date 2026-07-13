@@ -510,6 +510,20 @@ function M.new(template)
   open_chooser(placeholder, nil, with_template)
 end
 
+---Ask Claude for a ghost-text completion at the cursor (insert or normal mode).
+---Implements the comment above the cursor, finishes the current construct, etc.
+function M.suggest()
+  require("xcode-templates.suggest").trigger(M.config)
+end
+
+---Ask Claude about the visual selection (review / implement / refactor / custom).
+---@param instruction string|nil prompts when nil
+---@param srow integer|nil explicit range (1-indexed) instead of the visual marks
+---@param erow integer|nil
+function M.ask(instruction, srow, erow)
+  require("xcode-templates.suggest").ask(M.config, instruction, srow, erow)
+end
+
 ---Keep the header's `//  File.swift` line in sync after renames.
 ---@param buf integer|nil
 function M.sync_header(buf)
@@ -565,6 +579,36 @@ function M.setup(opts)
       end,
     })
   end
+
+  if M.config.ai.suggest.keymap then
+    vim.api.nvim_create_autocmd("FileType", {
+      group = group,
+      pattern = "swift",
+      desc = "AI completion keymap for swift buffers",
+      callback = function(ev)
+        vim.keymap.set({ "i", "n" }, M.config.ai.suggest.keymap, M.suggest, {
+          buffer = ev.buf,
+          desc = "AI: complete at cursor",
+        })
+      end,
+    })
+  end
+
+  vim.api.nvim_create_user_command("XcodeSuggest", function()
+    M.suggest()
+  end, { desc = "AI: complete at the cursor (ghost text)" })
+
+  vim.api.nvim_create_user_command("XcodeAI", function(cmd)
+    if cmd.range > 0 then
+      M.ask(cmd.args ~= "" and cmd.args or nil, cmd.line1, cmd.line2)
+    else
+      M.suggest()
+    end
+  end, {
+    nargs = "*",
+    range = true,
+    desc = "AI: ask about the selection (with range) or complete at the cursor",
+  })
 
   vim.api.nvim_create_user_command("XcodeTemplate", function(cmd)
     local template

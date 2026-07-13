@@ -33,6 +33,12 @@ function M.defaults()
       max_tokens = 16000,
       effort = "low", -- low | medium | high | xhigh | max
       context_files = 30,
+      suggest = {
+        keymap = "<C-x><C-a>", -- swift buffers, insert+normal; false to disable
+        max_tokens = 4096,
+        context_before = 120, -- lines of code sent before the cursor
+        context_after = 40, -- lines of code sent after the cursor
+      },
     },
     templates = {},
   }
@@ -72,6 +78,13 @@ function M.validate(cfg)
   end
   if not vim.tbl_contains({ "low", "medium", "high", "xhigh", "max" }, cfg.ai.effort) then
     error("xcode-templates: option `ai.effort` must be one of low/medium/high/xhigh/max", 0)
+  end
+  check("ai.suggest", cfg.ai.suggest, "table")
+  check("ai.suggest.max_tokens", cfg.ai.suggest.max_tokens, "number")
+  check("ai.suggest.context_before", cfg.ai.suggest.context_before, "number")
+  check("ai.suggest.context_after", cfg.ai.suggest.context_after, "number")
+  if cfg.ai.suggest.keymap ~= nil and cfg.ai.suggest.keymap ~= false and type(cfg.ai.suggest.keymap) ~= "string" then
+    error("xcode-templates: option `ai.suggest.keymap` must be a string or false", 0)
   end
   check("templates", cfg.templates, "table")
   if cfg.columns < 1 or cfg.columns > 6 then

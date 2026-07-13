@@ -85,6 +85,21 @@ file from its name, the detected intent, the project, and the names of
 sibling Swift files. Only file names are sent — never file contents. The
 key is passed to curl via stdin, never on the command line.
 
+Inline assistance (same credentials):
+
+:XcodeSuggest (or ai.suggest.keymap, default <C-x><C-a>, swift buffers)
+    Ghost-text completion at the cursor. Implements the comment above the
+    cursor or finishes the construct being written. <Tab> accepts, <C-e>
+    dismisses; any edit or cursor movement dismisses.
+
+:{range}XcodeAI [{instruction}]
+    Ask Claude about the selected lines (review / implement / refactor /
+    fix / custom instruction; prompts when omitted). The answer opens in a
+    float: `a` replaces the selection with it, `y` yanks it, `q` closes.
+
+require("xcode-templates").suggest()  and  .ask({instruction}?, {srow}?, {erow}?)
+    are the corresponding Lua entry points for custom mappings.
+
 ==============================================================================
 API                                                     *xcode-templates-api*
 
