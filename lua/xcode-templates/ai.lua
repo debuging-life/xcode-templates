@@ -27,13 +27,55 @@ function M.api_key(config)
   return nil
 end
 
+local function anthropic_config_dir()
+  return vim.env.ANTHROPIC_CONFIG_DIR or (vim.env.HOME .. "/.config/anthropic")
+end
+
+---True when the `ant` CLI is installed and `ant auth login` has stored a profile.
+---@return boolean
+function M.oauth_available()
+  if vim.fn.executable("ant") == 0 then
+    return false
+  end
+  return vim.fn.glob(anthropic_config_dir() .. "/credentials/*.json") ~= ""
+end
+
 ---@param config XcodeTemplates.Config
 ---@return boolean
 function M.available(config)
   return config.ai ~= nil
     and config.ai.enabled
-    and M.api_key(config) ~= nil
     and vim.fn.executable("curl") == 1
+    and (M.api_key(config) ~= nil or M.oauth_available())
+end
+
+---Resolve auth headers (async): API key directly, else a fresh OAuth access
+---token from `ant auth print-credentials`. Headers are delivered in curl
+---`--config` format so secrets go via stdin, never on the argv.
+---@param config XcodeTemplates.Config
+---@param cb fun(header_config: string|nil, err: string|nil)
+local function with_credentials(config, cb)
+  local key = M.api_key(config)
+  if key then
+    return cb(('header = "x-api-key: %s"'):format(key))
+  end
+  if not M.oauth_available() then
+    return cb(nil, "no API key and no `ant auth login` profile — set $ANTHROPIC_API_KEY or run `ant auth login`")
+  end
+  -- --access-token prints the bare token (refreshing it first if needed)
+  vim.system({ "ant", "auth", "print-credentials", "--access-token" }, { text = true }, function(res)
+    vim.schedule(function()
+      local token = vim.trim(res.stdout or "")
+      if res.code ~= 0 or token == "" then
+        return cb(nil, "could not get an OAuth token — re-run `ant auth login` (" .. vim.trim(res.stderr or "expired profile?") .. ")")
+      end
+      -- OAuth tokens use Authorization: Bearer + the oauth beta header, not x-api-key
+      cb(table.concat({
+        ('header = "authorization: Bearer %s"'):format(token),
+        'header = "anthropic-beta: oauth-2025-04-20"',
+      }, "\n"))
+    end)
+  end)
 end
 
 ---Names of sibling .swift files (context for the model).
@@ -129,10 +171,6 @@ end
 ---@param hint string|nil detected template id
 ---@param cb fun(lines: string[]|nil, err: string|nil)
 function M.generate(ctx, config, hint, cb)
-  local key = M.api_key(config)
-  if not key then
-    return cb(nil, "no API key — set $ANTHROPIC_API_KEY or `ai.api_key` in setup()")
-  end
   local system, user = M.build_prompt(ctx, M.siblings(ctx.path, config.ai.context_files), hint)
   local request = {
     model = config.ai.model,
@@ -146,36 +184,41 @@ function M.generate(ctx, config, hint, cb)
     request.output_config = { effort = config.ai.effort }
   end
   local body = vim.json.encode(request)
-  local okrun, err = pcall(vim.system, {
-    "curl",
-    "-sS",
-    "--max-time",
-    "120",
-    "-X",
-    "POST",
-    API_URL,
-    "-H",
-    "content-type: application/json",
-    "-H",
-    "anthropic-version: 2023-06-01",
-    "--config",
-    "-", -- API key arrives via stdin, never on the argv
-    "--data-binary",
-    body,
-  }, {
-    stdin = ('header = "x-api-key: %s"'):format(key),
-    text = true,
-  }, function(res)
-    vim.schedule(function()
-      if res.code ~= 0 then
-        return cb(nil, "request failed: " .. vim.trim(res.stderr or ("curl exit " .. res.code)))
-      end
-      cb(M.parse_response(res.stdout or ""))
+  with_credentials(config, function(auth_headers, auth_err)
+    if not auth_headers then
+      return cb(nil, auth_err)
+    end
+    local okrun, err = pcall(vim.system, {
+      "curl",
+      "-sS",
+      "--max-time",
+      "120",
+      "-X",
+      "POST",
+      API_URL,
+      "-H",
+      "content-type: application/json",
+      "-H",
+      "anthropic-version: 2023-06-01",
+      "--config",
+      "-", -- credentials arrive via stdin, never on the argv
+      "--data-binary",
+      body,
+    }, {
+      stdin = auth_headers,
+      text = true,
+    }, function(res)
+      vim.schedule(function()
+        if res.code ~= 0 then
+          return cb(nil, "request failed: " .. vim.trim(res.stderr or ("curl exit " .. res.code)))
+        end
+        cb(M.parse_response(res.stdout or ""))
+      end)
     end)
+    if not okrun then
+      cb(nil, "could not start curl: " .. tostring(err))
+    end
   end)
-  if not okrun then
-    cb(nil, "could not start curl: " .. tostring(err))
-  end
 end
 
 return M

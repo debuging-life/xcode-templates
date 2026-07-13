@@ -41,16 +41,21 @@ function M.check()
   local config = require("xcode-templates").config
   local Ai = require("xcode-templates.ai")
   if Ai.available(config) then
-    health.ok(("AI Suggestion template enabled (model: %s, key: %s)"):format(
-      config.ai.model,
-      config.ai.api_key and "setup() override" or "$ANTHROPIC_API_KEY"
-    ))
+    local source = "$ANTHROPIC_API_KEY"
+    if config.ai.api_key and Ai.api_key(config) then
+      source = "setup() `ai.api_key`"
+    elseif not Ai.api_key(config) then
+      source = "`ant auth login` profile (OAuth)"
+    end
+    health.ok(("AI Suggestion template enabled (model: %s, auth: %s)"):format(config.ai.model, source))
   elseif not config.ai.enabled then
     health.info("AI Suggestion template disabled via `ai.enabled = false`")
   elseif vim.fn.executable("curl") == 0 then
     health.warn("curl not found — required for the AI Suggestion template")
   else
-    health.info("no Claude API key — set $ANTHROPIC_API_KEY (or `ai.api_key`) to enable the ✻ AI Suggestion template")
+    health.info(
+      "no Claude credentials — set $ANTHROPIC_API_KEY / `ai.api_key`, or install the ant CLI and run `ant auth login`"
+    )
   end
 
   local ok, err = pcall(require("xcode-templates.config").validate, require("xcode-templates").config)

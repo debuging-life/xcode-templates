@@ -179,9 +179,19 @@ opts = {
 
 ## ✻ AI Suggestions
 
-Export `ANTHROPIC_API_KEY` (or set `ai.api_key` — a string, or a function that reads
-your password manager) and an **Intelligence** section appears in the chooser with an
-*AI Suggestion* template. Choosing it inserts the Xcode header plus a placeholder,
+Authenticate any of three ways and an **Intelligence** section appears in the chooser
+with an *AI Suggestion* template:
+
+1. **Browser login (no key handling)** — install the [Anthropic CLI](https://platform.claude.com/docs/en/api/sdks/cli)
+   (`brew install anthropics/tap/ant`), run `ant auth login`, click *Authorize*.
+   The plugin picks up the stored profile and refreshes tokens automatically.
+   Note: this authorizes your Anthropic **Platform (API)** account — usage bills
+   to API credits, not a claude.ai subscription.
+2. **Environment variable** — export `ANTHROPIC_API_KEY` in your shell profile.
+3. **`ai.api_key` in setup()** — a string, or a function that reads your password
+   manager / Keychain (example below).
+
+Resolution order: `ai.api_key` → `$ANTHROPIC_API_KEY` → `ant auth login` profile. Choosing it inserts the Xcode header plus a placeholder,
 then asynchronously asks Claude to draft the file using the file name, the detected
 intent (`FooViewModel` → view model, etc.), the project name, and the names of the
 sibling Swift files in the folder. `:XcodeTemplate ai-suggest` triggers it directly.
