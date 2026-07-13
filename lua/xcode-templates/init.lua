@@ -285,18 +285,97 @@ local function open_chooser(path, preselect, on_item)
   }, on_item)
 end
 
+---Turn a path into a directory: itself when it is one, else its parent.
+local function dir_of(path)
+  if not path or path == "" then
+    return nil
+  end
+  path = vim.fn.fnamemodify(path, ":p")
+  if vim.fn.isdirectory(path) == 1 then
+    return path
+  end
+  return vim.fs.dirname(path)
+end
+
+---Directory to prefill in the filename prompt. From a regular file buffer:
+---that file's folder. From a file explorer (snacks, neo-tree, nvim-tree,
+---oil): the folder of the node under the cursor.
+---@return string|nil absolute directory
+local function base_dir()
+  local buf = vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(buf)
+  local ft = vim.bo[buf].filetype
+
+  -- regular file buffer → its own directory
+  if vim.bo[buf].buftype == "" and name ~= "" and not name:match("^%w+://") then
+    return vim.fs.dirname(vim.fn.fnamemodify(name, ":p"))
+  end
+
+  -- oil.nvim: the buffer *is* the directory
+  if name:match("^oil://") then
+    local ok, oil = pcall(require, "oil")
+    local dir = ok and oil.get_current_dir()
+    if dir then
+      return vim.fn.fnamemodify(dir, ":p")
+    end
+  end
+
+  -- snacks explorer (LazyVim default): selected item of the explorer picker
+  do
+    local ok, picker_mod = pcall(require, "snacks.picker")
+    if ok and picker_mod.get then
+      local okg, pickers = pcall(picker_mod.get, { source = "explorer" })
+      for _, picker in ipairs(okg and pickers or {}) do
+        local oki, item = pcall(picker.current, picker)
+        local dir = oki and item and dir_of(item.file or item._path)
+        if dir then
+          return dir
+        end
+      end
+    end
+  end
+
+  -- neo-tree: node under the cursor in the filesystem source
+  do
+    local ok, manager = pcall(require, "neo-tree.sources.manager")
+    if ok then
+      local oks, state = pcall(manager.get_state, "filesystem")
+      local node = oks and state and state.tree and state.tree:get_node()
+      local dir = node and dir_of(node.path or node:get_id())
+      if dir then
+        return dir
+      end
+    end
+  end
+
+  -- nvim-tree (cursor APIs are only valid inside the tree window)
+  if ft == "NvimTree" then
+    local ok, api = pcall(require, "nvim-tree.api")
+    if ok then
+      local okn, node = pcall(api.tree.get_node_under_cursor)
+      local dir = okn and node and dir_of(node.absolute_path)
+      if dir then
+        return dir
+      end
+    end
+  end
+
+  return nil
+end
+
 ---Prompt for the new file's path (with file completion) and create it.
 ---Re-prompts (keeping the input) when the file already exists.
 ---@param template table
----@param default string|nil prefill; defaults to the current file's directory
+---@param default string|nil prefill; defaults to the selected folder (explorer) or current file's directory
 local function prompt_filename(template, default)
   if default == nil then
-    local bufname = vim.api.nvim_buf_get_name(0)
     default = ""
-    if bufname ~= "" and not bufname:match("^%w+://") then
-      local dir = vim.fn.fnamemodify(bufname, ":.:h")
-      if dir ~= "." then
-        default = dir .. "/"
+    local dir = base_dir()
+    if dir then
+      -- relative to cwd when inside it, absolute/home-relative otherwise
+      local rel = vim.fn.fnamemodify(dir, ":~:.")
+      if rel ~= "" and rel ~= "." then
+        default = rel:sub(-1) == "/" and rel or (rel .. "/")
       end
     end
   end
