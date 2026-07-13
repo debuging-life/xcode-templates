@@ -54,6 +54,23 @@ local function buf_is_empty(buf)
   return (vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or "") == ""
 end
 
+---Explorers don't watch for files created outside their own actions —
+---nudge any open one to reload after we write a file to disk.
+local function refresh_explorers()
+  -- snacks explorer (LazyVim default): re-run the finder
+  pcall(function()
+    for _, picker in ipairs(require("snacks.picker").get({ source = "explorer" }) or {}) do
+      picker:find()
+    end
+  end)
+  pcall(function()
+    require("neo-tree.sources.manager").refresh("filesystem")
+  end)
+  pcall(function()
+    require("nvim-tree.api").tree.reload()
+  end)
+end
+
 ---Look up a template by id (exact) or display name (case-insensitive).
 ---@param id_or_name string
 ---@return table|nil
@@ -258,6 +275,7 @@ function M.create(template, path, options)
   if M.config.add_to_project then
     Pbxproj.add(full, template.target == "test" and "test" or "app")
   end
+  refresh_explorers()
   return buf
 end
 
