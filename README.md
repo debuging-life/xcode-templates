@@ -66,7 +66,8 @@ With [lazy.nvim](https://github.com/folke/lazy.nvim) / LazyVim:
 ```lua
 return {
   {
-    "pardipbhatti/xcode-templates.nvim",
+    "debuging-life/xcode-templates",
+    name = "xcode-templates.nvim",
     event = { "BufReadPre *.swift", "BufNewFile *.swift" },
     cmd = "XcodeTemplate",
     keys = {
