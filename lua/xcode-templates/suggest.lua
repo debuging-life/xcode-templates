@@ -124,8 +124,10 @@ function M.trigger(config)
   }, "\n")
 
   local tick = vim.api.nvim_buf_get_changedtick(buf)
-  vim.notify("✻ asking Claude…", vim.log.levels.INFO)
+  local Progress = require("xcode-templates.progress")
+  Progress.start({ title = "✻ asking Claude", text = ("completing %s:%d…"):format(ctx.filename, row + 1) })
   Ai.complete(system, user, config, scfg.max_tokens, function(lines, err)
+    Progress.stop()
     if err then
       return vim.notify("xcode-templates: " .. err, vim.log.levels.WARN)
     end
@@ -288,8 +290,10 @@ function M.ask_at_cursor(config, question)
     "",
     "Question: " .. question,
   }, "\n")
-  vim.notify('✻ asking Claude: "' .. question .. '"', vim.log.levels.INFO)
+  local Progress = require("xcode-templates.progress")
+  Progress.start({ title = "✻ asking Claude", text = '"' .. question .. '"' })
   Ai.complete(system, user, config, scfg.max_tokens, function(lines, err)
+    Progress.stop()
     if err then
       return vim.notify("xcode-templates: " .. err, vim.log.levels.WARN)
     end
@@ -354,8 +358,10 @@ function M.ask(config, instruction, srow, erow)
       "",
       "Instruction: " .. instr,
     }, "\n")
-    vim.notify("✻ asking Claude…", vim.log.levels.INFO)
+    local Progress = require("xcode-templates.progress")
+    Progress.start({ title = "✻ asking Claude", text = ('"%s" on lines %d–%d…'):format(instr, srow, erow) })
     Ai.complete(system, user, config, config.ai.suggest.max_tokens, function(lines, err)
+      Progress.stop()
       if err then
         return vim.notify("xcode-templates: " .. err, vim.log.levels.WARN)
       end

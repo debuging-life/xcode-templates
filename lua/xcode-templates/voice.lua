@@ -25,8 +25,8 @@ end
 
 ---Start (or stop, when already listening) voice capture.
 ---@param config XcodeTemplates.Config
----@param on_transcript fun(text: string) called on the main loop
-function M.toggle(config, on_transcript)
+---@param handlers { on_transcript: fun(text: string), on_partial: (fun(text: string))?, on_start: (fun())?, on_error: (fun())? } all called on the main loop
+function M.toggle(config, handlers)
   if rec then
     return M.stop()
   end
@@ -36,8 +36,8 @@ function M.toggle(config, on_transcript)
   end
   if vim.fn.executable(cmd[1]) == 0 then
     return vim.notify(
-      ("xcode-templates: `%s` not found — install a speech-to-text CLI (macOS: `brew install hear`),"
-        .. " or set `ai.voice.command`"):format(cmd[1]),
+      ("xcode-templates: `%s` not found — install a speech-to-text CLI"
+        .. " (macOS: github.com/sveinbjornt/hear), or set `ai.voice.command`"):format(cmd[1]),
       vim.log.levels.WARN
     )
   end
@@ -48,6 +48,13 @@ function M.toggle(config, on_transcript)
     stdout = function(_, data)
       if data then
         chunks[#chunks + 1] = data
+        if handlers.on_partial then
+          vim.schedule(function()
+            if rec then
+              handlers.on_partial(vim.trim(table.concat(chunks, ""):gsub("%s+", " ")))
+            end
+          end)
+        end
       end
     end,
   }, function(res)
@@ -55,20 +62,28 @@ function M.toggle(config, on_transcript)
       rec = nil
       local text = vim.trim(table.concat(chunks, ""):gsub("%s+", " "))
       if text == "" then
+        if handlers.on_error then
+          handlers.on_error()
+        end
         local err = vim.trim(res.stderr or "")
         return vim.notify(
           "xcode-templates: heard nothing" .. (err ~= "" and (" (" .. err .. ")") or ""),
           vim.log.levels.WARN
         )
       end
-      on_transcript(text)
+      handlers.on_transcript(text)
     end)
   end)
   if not ok then
+    if handlers.on_error then
+      handlers.on_error()
+    end
     return vim.notify("xcode-templates: could not start voice capture: " .. tostring(handle), vim.log.levels.ERROR)
   end
   rec = { handle = handle }
-  vim.notify("🎤 listening… trigger again to stop", vim.log.levels.INFO)
+  if handlers.on_start then
+    handlers.on_start()
+  end
 end
 
 return M

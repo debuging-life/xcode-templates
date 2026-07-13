@@ -231,10 +231,12 @@ function M._apply_ai(buf, ctx)
   local header_len = #header_lines
   local lines = vim.list_extend(vim.list_extend({}, header_lines), { AI_PLACEHOLDER, "" })
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  notify(("asking Claude to draft %s…"):format(ctx.filename), vim.log.levels.INFO)
+  local Progress = require("xcode-templates.progress")
+  Progress.start({ title = "✻ asking Claude", text = ("drafting %s…"):format(ctx.filename) })
 
   local hint = Detect.detect(ctx.path).template
   Ai.generate(ctx, M.config, hint, function(body, err)
+    Progress.stop()
     if not vim.api.nvim_buf_is_valid(buf) then
       return
     end
@@ -529,17 +531,33 @@ end
 ---your file is never touched).
 function M.voice()
   local Voice = require("xcode-templates.voice")
+  local Progress = require("xcode-templates.progress")
   if Voice.recording() then
+    Progress.retitle("✻ transcribing")
     return Voice.stop()
   end
   local win = vim.api.nvim_get_current_win()
-  Voice.toggle(M.config, function(text)
-    vim.notify('🎤 "' .. text .. '"', vim.log.levels.INFO)
-    if vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_set_current_win(win)
-    end
-    require("xcode-templates.suggest").ask_at_cursor(M.config, text)
-  end)
+  Voice.toggle(M.config, {
+    on_start = function()
+      Progress.start({
+        title = "🎤 listening",
+        text = "speak now…",
+        hint = "trigger again to stop",
+      })
+    end,
+    on_partial = function(text)
+      Progress.update(text) -- live transcription while you speak
+    end,
+    on_error = function()
+      Progress.stop()
+    end,
+    on_transcript = function(text)
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_set_current_win(win)
+      end
+      require("xcode-templates.suggest").ask_at_cursor(M.config, text)
+    end,
+  })
 end
 
 ---Typed variant of the same: answer in a float, never edits the file.
