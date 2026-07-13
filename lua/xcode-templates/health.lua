@@ -58,6 +58,14 @@ function M.check()
     )
   end
 
+  local vcmd = config.ai.voice.command
+  vcmd = type(vcmd) == "table" and vcmd[1] or vcmd
+  if vim.fn.executable(vcmd) == 1 then
+    health.ok(("voice input available (`%s`)"):format(vcmd))
+  else
+    health.info(("voice input: `%s` not found — macOS: `brew install hear` (or set `ai.voice.command`)"):format(vcmd))
+  end
+
   local ok, err = pcall(require("xcode-templates.config").validate, require("xcode-templates").config)
   if ok then
     health.ok("configuration is valid")

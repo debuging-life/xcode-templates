@@ -214,7 +214,35 @@ keys = {
 
 Configure under `ai.suggest`: `keymap` (default `<C-x><C-a>`, `false` to disable),
 `max_tokens` (4096), `context_before` (120 lines), `context_after` (40 lines).
-Suggestions are manual-trigger by design — no keystroke-by-keystroke API calls. Choosing it inserts the Xcode header plus a placeholder,
+Suggestions are manual-trigger by design — no keystroke-by-keystroke API calls.
+
+### 🎤 Voice questions & the answer float
+
+`:XcodeVoice` toggles microphone capture (start → speak → trigger again to stop).
+The transcript is asked about the code around your cursor, and the answer opens in
+a **movable, persistent float** — your file is never modified. `:XcodeHow [question]`
+is the typed equivalent.
+
+In the float: **arrow keys move it** around your editor · **`o` pops it out into a
+native TextEdit window you can drag to any screen/monitor** · `y` yanks · `q` closes.
+It stays open while you keep coding.
+
+Voice needs a local speech-to-text CLI (the Claude API is text-only). On macOS:
+
+```bash
+brew install hear   # Apple's on-device speech recognition as a CLI
+```
+
+macOS will ask for microphone + speech-recognition permission for your terminal on
+first use. Any other transcriber that prints text to stdout works via
+`ai.voice.command` (e.g. a whisper-cpp wrapper).
+
+```lua
+keys = {
+  { "<leader>iv", function() require("xcode-templates").voice() end, desc = "AI Voice Question" },
+  { "<leader>iw", function() require("xcode-templates").how() end, desc = "AI How Do I…" },
+},
+``` Choosing it inserts the Xcode header plus a placeholder,
 then asynchronously asks Claude to draft the file using the file name, the detected
 intent (`FooViewModel` → view model, etc.), the project name, and the names of the
 sibling Swift files in the folder. `:XcodeTemplate ai-suggest` triggers it directly.

@@ -39,6 +39,11 @@ function M.defaults()
         context_before = 120, -- lines of code sent before the cursor
         context_after = 40, -- lines of code sent after the cursor
       },
+      voice = {
+        -- speech-to-text CLI printing the transcript to stdout
+        -- (macOS: `brew install hear`; any whisper wrapper works too)
+        command = { "hear" },
+      },
     },
     templates = {},
   }
@@ -85,6 +90,10 @@ function M.validate(cfg)
   check("ai.suggest.context_after", cfg.ai.suggest.context_after, "number")
   if cfg.ai.suggest.keymap ~= nil and cfg.ai.suggest.keymap ~= false and type(cfg.ai.suggest.keymap) ~= "string" then
     error("xcode-templates: option `ai.suggest.keymap` must be a string or false", 0)
+  end
+  check("ai.voice", cfg.ai.voice, "table")
+  if type(cfg.ai.voice.command) ~= "string" and type(cfg.ai.voice.command) ~= "table" then
+    error("xcode-templates: option `ai.voice.command` must be a string or a list of arguments", 0)
   end
   check("templates", cfg.templates, "table")
   if cfg.columns < 1 or cfg.columns > 6 then

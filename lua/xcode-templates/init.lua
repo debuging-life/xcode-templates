@@ -524,6 +524,38 @@ function M.ask(instruction, srow, erow)
   require("xcode-templates.suggest").ask(M.config, instruction, srow, erow)
 end
 
+---Voice question: toggle microphone capture; the transcript is asked about
+---the code around the cursor and answered in a movable float (read-only —
+---your file is never touched).
+function M.voice()
+  local Voice = require("xcode-templates.voice")
+  if Voice.recording() then
+    return Voice.stop()
+  end
+  local win = vim.api.nvim_get_current_win()
+  Voice.toggle(M.config, function(text)
+    vim.notify('🎤 "' .. text .. '"', vim.log.levels.INFO)
+    if vim.api.nvim_win_is_valid(win) then
+      vim.api.nvim_set_current_win(win)
+    end
+    require("xcode-templates.suggest").ask_at_cursor(M.config, text)
+  end)
+end
+
+---Typed variant of the same: answer in a float, never edits the file.
+---@param question string|nil prompts when nil
+function M.how(question)
+  local function run(q)
+    if q and vim.trim(q) ~= "" then
+      require("xcode-templates.suggest").ask_at_cursor(M.config, q)
+    end
+  end
+  if question and question ~= "" then
+    return run(question)
+  end
+  vim.ui.input({ prompt = "Ask AI (answer opens in a float): " }, run)
+end
+
 ---Keep the header's `//  File.swift` line in sync after renames.
 ---@param buf integer|nil
 function M.sync_header(buf)
@@ -597,6 +629,14 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("XcodeSuggest", function()
     M.suggest()
   end, { desc = "AI: complete at the cursor (ghost text)" })
+
+  vim.api.nvim_create_user_command("XcodeVoice", function()
+    M.voice()
+  end, { desc = "AI: voice question — answer opens in a movable float" })
+
+  vim.api.nvim_create_user_command("XcodeHow", function(cmd)
+    M.how(cmd.args ~= "" and cmd.args or nil)
+  end, { nargs = "*", desc = "AI: ask how to do something — answer opens in a movable float" })
 
   vim.api.nvim_create_user_command("XcodeAI", function(cmd)
     if cmd.range > 0 then

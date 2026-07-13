@@ -157,9 +157,15 @@ local function looks_like_prose(lines)
   return false
 end
 
----Show an AI answer in a float. `a` replaces the original selection with it,
----`y` yanks it, `q`/<Esc> closes. Exposed for tests.
-function M.result_float(src_buf, srow, erow, lines)
+---Show an AI answer in a persistent, movable float.
+---Keys: arrows move the window · `o` pops it out into a native macOS window
+---(draggable to any screen) · `y` yanks · `a` applies as replacement (when a
+---source range was given) · `q`/<Esc> closes. It stays open while you keep
+---coding in other windows.
+---@param opts { title: string, lines: string[], src_buf?: integer, srow?: integer, erow?: integer }
+---@return integer win
+function M.float(opts)
+  local lines = opts.lines
   local buf = vim.api.nvim_create_buf(false, true)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].bufhidden = "wipe"
@@ -168,6 +174,7 @@ function M.result_float(src_buf, srow, erow, lines)
 
   local width = math.min(100, math.max(46, vim.o.columns - 20))
   local height = math.max(3, math.min(#lines + 1, vim.o.lines - 8))
+  local can_apply = opts.src_buf ~= nil
   local win = vim.api.nvim_open_win(buf, true, {
     relative = "editor",
     width = width,
@@ -176,9 +183,10 @@ function M.result_float(src_buf, srow, erow, lines)
     row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
     style = "minimal",
     border = "rounded",
-    title = (" ✻ Claude — lines %d–%d "):format(srow, erow),
+    title = " " .. opts.title .. " ",
     title_pos = "center",
-    footer = "  a apply as replacement · y yank · q close  ",
+    footer = can_apply and "  ⇄ arrows move · a apply · o pop out · y yank · q close  "
+      or "  ⇄ arrows move · o pop out · y yank · q close  ",
     footer_pos = "center",
   })
   vim.wo[win].wrap = true
@@ -188,20 +196,112 @@ function M.result_float(src_buf, srow, erow, lines)
       vim.api.nvim_win_close(win, true)
     end
   end
-  vim.keymap.set("n", "q", close, { buffer = buf, nowait = true })
-  vim.keymap.set("n", "<esc>", close, { buffer = buf, nowait = true })
-  vim.keymap.set("n", "y", function()
+  local function move(dr, dc)
+    if not vim.api.nvim_win_is_valid(win) then
+      return
+    end
+    local cfg = vim.api.nvim_win_get_config(win)
+    cfg.relative = "editor"
+    cfg.row = math.max(0, math.min((cfg.row or 0) + dr, vim.o.lines - height - 4))
+    cfg.col = math.max(0, math.min((cfg.col or 0) + dc, vim.o.columns - width - 2))
+    pcall(vim.api.nvim_win_set_config, win, cfg)
+  end
+
+  local function map(lhs, fn, desc)
+    vim.keymap.set("n", lhs, fn, { buffer = buf, nowait = true, desc = desc })
+  end
+  map("q", close, "Close")
+  map("<esc>", close, "Close")
+  map("<up>", function() move(-2, 0) end, "Move up")
+  map("<down>", function() move(2, 0) end, "Move down")
+  map("<left>", function() move(0, -4) end, "Move left")
+  map("<right>", function() move(0, 4) end, "Move right")
+  map("y", function()
     vim.fn.setreg('"', table.concat(lines, "\n") .. "\n")
     vim.notify("xcode-templates: answer yanked")
-  end, { buffer = buf, nowait = true })
-  vim.keymap.set("n", "a", function()
-    close()
-    if vim.api.nvim_buf_is_valid(src_buf) then
-      vim.api.nvim_buf_set_lines(src_buf, srow - 1, erow, false, lines)
-      vim.notify(("xcode-templates: replaced lines %d–%d"):format(srow, erow))
+  end, "Yank answer")
+  map("o", function()
+    -- pop out into a native window — draggable to any screen
+    local tmp = vim.fn.tempname() .. ".md"
+    vim.fn.writefile(lines, tmp)
+    if vim.fn.executable("open") == 1 then
+      vim.system({ "open", "-e", tmp })
+      vim.notify("xcode-templates: opened in TextEdit — drag it to any screen")
+    else
+      vim.notify("xcode-templates: saved to " .. tmp, vim.log.levels.INFO)
     end
-  end, { buffer = buf, nowait = true })
+  end, "Pop out to a native window")
+  if can_apply then
+    map("a", function()
+      close()
+      if vim.api.nvim_buf_is_valid(opts.src_buf) then
+        vim.api.nvim_buf_set_lines(opts.src_buf, opts.srow - 1, opts.erow, false, lines)
+        vim.notify(("xcode-templates: replaced lines %d–%d"):format(opts.srow, opts.erow))
+      end
+    end, "Apply as replacement")
+  end
   return win
+end
+
+---Back-compat wrapper: answer float for a selection, with apply enabled.
+function M.result_float(src_buf, srow, erow, lines)
+  return M.float({
+    title = ("✻ Claude — lines %d–%d"):format(srow, erow),
+    lines = lines,
+    src_buf = src_buf,
+    srow = srow,
+    erow = erow,
+  })
+end
+
+---Ask a free-form question about the code around the cursor; the answer opens
+---in a float and the source file is never modified. Used by voice input.
+---@param config XcodeTemplates.Config
+---@param question string
+function M.ask_at_cursor(config, question)
+  if not Ai.available(config) then
+    return vim.notify(
+      "xcode-templates: no Claude credentials — set $ANTHROPIC_API_KEY or run `ant auth login`",
+      vim.log.levels.WARN
+    )
+  end
+  local buf = vim.api.nvim_get_current_buf()
+  local row = vim.api.nvim_win_get_cursor(0)[1] - 1
+  local scfg = config.ai.suggest
+  local total = vim.api.nvim_buf_line_count(buf)
+  local around = vim.api.nvim_buf_get_lines(
+    buf,
+    math.max(0, row - scfg.context_before),
+    math.min(total, row + 1 + scfg.context_after),
+    false
+  )
+  local ctx = Header.context(vim.api.nvim_buf_get_name(buf), config)
+  local system = table.concat({
+    "You are a senior Swift engineer answering a colleague's question inside Neovim.",
+    "They want to be SHOWN how to do it — do not assume you can edit their files.",
+    "Reply in concise markdown: the code first, then at most a few short bullet points.",
+  }, " ")
+  local user = table.concat({
+    ("File: %s — project %s"):format(ctx.filename, ctx.project),
+    "Code around the cursor:",
+    table.concat(around, "\n"),
+    "",
+    "Question: " .. question,
+  }, "\n")
+  vim.notify('✻ asking Claude: "' .. question .. '"', vim.log.levels.INFO)
+  Ai.complete(system, user, config, scfg.max_tokens, function(lines, err)
+    if err then
+      return vim.notify("xcode-templates: " .. err, vim.log.levels.WARN)
+    end
+    while #lines > 0 and vim.trim(lines[#lines]) == "" do
+      table.remove(lines)
+    end
+    if #lines == 0 then
+      return vim.notify("xcode-templates: empty answer", vim.log.levels.WARN)
+    end
+    local title = "✻ " .. (question:len() > 60 and (question:sub(1, 57) .. "…") or question)
+    M.float({ title = title, lines = lines })
+  end)
 end
 
 ---Ask Claude about a selection: review, implement, refactor, or anything.
