@@ -38,6 +38,21 @@ function M.check()
     health.info("ruby not found — only needed for old-style Xcode projects")
   end
 
+  local config = require("xcode-templates").config
+  local Ai = require("xcode-templates.ai")
+  if Ai.available(config) then
+    health.ok(("AI Suggestion template enabled (model: %s, key: %s)"):format(
+      config.ai.model,
+      config.ai.api_key and "setup() override" or "$ANTHROPIC_API_KEY"
+    ))
+  elseif not config.ai.enabled then
+    health.info("AI Suggestion template disabled via `ai.enabled = false`")
+  elseif vim.fn.executable("curl") == 0 then
+    health.warn("curl not found — required for the AI Suggestion template")
+  else
+    health.info("no Claude API key — set $ANTHROPIC_API_KEY (or `ai.api_key`) to enable the ✻ AI Suggestion template")
+  end
+
   local ok, err = pcall(require("xcode-templates.config").validate, require("xcode-templates").config)
   if ok then
     health.ok("configuration is valid")

@@ -75,7 +75,7 @@ M.sections = {
       {
         id = "cocoa-touch-class",
         name = "Cocoa Touch Class",
-        icon = "",
+        icon = "󰀵",
         desc = "A UIKit class — asks which subclass, like Xcode",
         cursor = 4,
         options = {
@@ -124,7 +124,7 @@ M.sections = {
       {
         id = "protocol",
         name = "Protocol",
-        icon = "",
+        icon = "󰜰",
         desc = "A Swift protocol",
         cursor = 4,
         body = function(ctx)
@@ -141,7 +141,7 @@ M.sections = {
       {
         id = "extension-file",
         name = "Extension",
-        icon = "",
+        icon = "󰏗",
         desc = "Extend a type — Type+Feature.swift derives the type",
         cursor = 4,
         options = {
@@ -169,7 +169,7 @@ M.sections = {
       {
         id = "enum",
         name = "Enum",
-        icon = "",
+        icon = "󰕘",
         desc = "A Swift enum",
         cursor = 4,
         body = function(ctx)
@@ -440,7 +440,7 @@ M.sections = {
       {
         id = "unit-test",
         name = "XCTest Unit Test",
-        icon = "",
+        icon = "󰙩",
         desc = "A unit test using XCTest",
         cursor = 15,
         target = "test",

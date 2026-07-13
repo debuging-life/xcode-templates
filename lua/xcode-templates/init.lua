@@ -7,6 +7,7 @@ local Templates = require("xcode-templates.templates")
 local Ui = require("xcode-templates.ui")
 local Detect = require("xcode-templates.detect")
 local Pbxproj = require("xcode-templates.pbxproj")
+local Ai = require("xcode-templates.ai")
 
 local uv = vim.uv or vim.loop
 
@@ -17,11 +18,32 @@ local function notify(msg, level)
   vim.notify("xcode-templates: " .. msg, level or vim.log.levels.ERROR)
 end
 
----Builtin sections + user sections from `opts.templates`.
+---The Claude-drafted template — shown only when an API key is available.
+local AI_ITEM = {
+  id = "ai-suggest",
+  name = "AI Suggestion",
+  icon = "󰚩",
+  desc = "Claude drafts this file from its name, project, and sibling files",
+  ai = true,
+  body = function(ctx)
+    return {
+      "// ✻ Claude will draft this file based on:",
+      ("//   • file name: %s"):format(ctx.filename),
+      ("//   • project: %s"):format(ctx.project),
+      "//   • the other Swift files in the same folder",
+      "",
+    }
+  end,
+}
+
+---Builtin sections + user sections from `opts.templates` (+ AI when configured).
 ---@return table[]
 local function all_sections()
   local out = vim.deepcopy(Templates.sections)
   vim.list_extend(out, M.config.templates or {})
+  if Ai.available(M.config) then
+    out[#out + 1] = { title = "Intelligence", items = { AI_ITEM } }
+  end
   return out
 end
 
@@ -126,6 +148,9 @@ function M.apply(buf, template, options)
   buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
   local ctx = Header.context(vim.api.nvim_buf_get_name(buf), M.config)
   ctx.options = vim.tbl_extend("force", option_defaults(template, ctx), options or {})
+  if template.ai then
+    return M._apply_ai(buf, ctx)
+  end
   local lines, header_len = {}, 0
   if M.config.header then
     lines = Header.lines(ctx)
@@ -150,6 +175,47 @@ function M.apply(buf, template, options)
     end
     pcall(vim.api.nvim_win_set_cursor, win, { target, 0 })
   end
+end
+
+local AI_PLACEHOLDER = "// ✻ Claude is drafting this file…"
+
+---Insert the header + a placeholder, then replace the body when Claude answers.
+---@param buf integer
+---@param ctx table
+function M._apply_ai(buf, ctx)
+  local header_lines = M.config.header and Header.lines(ctx) or {}
+  local header_len = #header_lines
+  local lines = vim.list_extend(vim.list_extend({}, header_lines), { AI_PLACEHOLDER, "" })
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  notify(("asking Claude to draft %s…"):format(ctx.filename), vim.log.levels.INFO)
+
+  local hint = Detect.detect(ctx.path).template
+  Ai.generate(ctx, M.config, hint, function(body, err)
+    if not vim.api.nvim_buf_is_valid(buf) then
+      return
+    end
+    -- only touch the buffer if the placeholder is still there (user didn't type)
+    local marker = vim.api.nvim_buf_get_lines(buf, header_len, header_len + 1, false)[1] or ""
+    if marker ~= AI_PLACEHOLDER then
+      return
+    end
+    if err then
+      vim.api.nvim_buf_set_lines(buf, header_len, header_len + 1, false, {
+        "// AI generation failed: " .. err,
+      })
+      notify(err)
+      return
+    end
+    local final = vim.list_extend(M.config.header and Header.lines(ctx) or {}, body)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, final)
+    local name = vim.api.nvim_buf_get_name(buf)
+    if name ~= "" and vim.fn.filereadable(name) == 1 then
+      vim.api.nvim_buf_call(buf, function()
+        pcall(vim.cmd.write)
+      end)
+    end
+    notify(("Claude drafted %s"):format(ctx.filename), vim.log.levels.INFO)
+  end)
 end
 
 ---Create `path` on disk from a template and open it. Scripting/test entry point.

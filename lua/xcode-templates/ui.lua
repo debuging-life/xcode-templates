@@ -18,6 +18,17 @@ local PREVIEW_W = 54
 ---@type table|nil the currently open picker controller (single instance)
 local active
 
+---Theme-aware highlight groups (override in your colorscheme to restyle).
+local function set_default_hl()
+  local hl = vim.api.nvim_set_hl
+  hl(0, "XcodeTemplatesSection", { link = "Title", default = true })
+  hl(0, "XcodeTemplatesSeparator", { link = "WinSeparator", default = true })
+  hl(0, "XcodeTemplatesIcon", { link = "Special", default = true })
+  hl(0, "XcodeTemplatesSelected", { link = "Visual", default = true })
+  hl(0, "XcodeTemplatesSelectedIcon", { link = "Visual", default = true })
+  hl(0, "XcodeTemplatesMuted", { link = "Comment", default = true })
+end
+
 local function fit(s, w)
   if vim.fn.strdisplaywidth(s) <= w then
     return s
@@ -46,6 +57,7 @@ function M.pick(sections, opts, on_choose)
     return active
   end
   opts = opts or {}
+  set_default_hl()
 
   local ncols = opts.columns or 3
   local width = ncols * CELL_W + (ncols + 1) * GAP
@@ -96,7 +108,7 @@ function M.pick(sections, opts, on_choose)
     if desc and desc ~= "" then
       return "  " .. desc .. "  "
     end
-    return "  type to filter · ←↑↓→ move · ↵ choose · esc close  "
+    return "  type to filter · ←↑↓→ move · ↵ choose · ⌃p preview · esc close  "
   end
 
   local function win_config()
@@ -116,6 +128,7 @@ function M.pick(sections, opts, on_choose)
   end
 
   local function pv_config()
+    local sel = state.items[state.sel]
     return {
       relative = "editor",
       width = PREVIEW_W,
@@ -124,7 +137,7 @@ function M.pick(sections, opts, on_choose)
       row = grid_row(),
       style = "minimal",
       border = "rounded",
-      title = " Preview ",
+      title = " " .. ((sel and sel.item.name) or "Preview") .. " ",
       title_pos = "center",
       focusable = false,
     }
@@ -207,13 +220,16 @@ function M.pick(sections, opts, on_choose)
     for _, sec in ipairs(filtered()) do
       local title = string.rep(" ", GAP) .. sec.title
       lines[#lines + 1] = title
-      static_hl[#static_hl + 1] = { #lines - 1, 0, #title, "Title" }
+      static_hl[#static_hl + 1] = { #lines - 1, 0, #title, "XcodeTemplatesSection" }
       local sep = string.rep(" ", GAP) .. string.rep("─", width - 2 * GAP)
       lines[#lines + 1] = sep
-      static_hl[#static_hl + 1] = { #lines - 1, 0, #sep, "WinSeparator" }
+      static_hl[#static_hl + 1] = { #lines - 1, 0, #sep, "XcodeTemplatesSeparator" }
       lines[#lines + 1] = ""
       for i = 1, #sec.items, ncols do
-        local icon_row, name_row = string.rep(" ", GAP), string.rep(" ", GAP)
+        -- center rows that don't fill every column (like Xcode's grid)
+        local count = math.min(ncols, #sec.items - i + 1)
+        local lead = GAP + math.floor(((ncols - count) * (CELL_W + GAP)) / 2)
+        local icon_row, name_row = string.rep(" ", lead), string.rep(" ", lead)
         local row_ids = {}
         local base = #lines -- icon row will land at line base+1, name row at base+2
         for c = 0, ncols - 1 do
@@ -241,7 +257,7 @@ function M.pick(sections, opts, on_choose)
 
     if #state.items == 0 then
       lines[#lines + 1] = string.rep(" ", GAP) .. "No matching templates"
-      static_hl[#static_hl + 1] = { #lines - 1, 0, -1, "Comment" }
+      static_hl[#static_hl + 1] = { #lines - 1, 0, -1, "XcodeTemplatesMuted" }
       lines[#lines + 1] = ""
     end
     state.sel = math.max(1, math.min(state.sel, #state.items))
@@ -257,10 +273,10 @@ function M.pick(sections, opts, on_choose)
     end
     for idx, rec in ipairs(state.items) do
       if idx == state.sel then
-        vim.api.nvim_buf_set_extmark(buf, ns, rec.l1 - 1, rec.s1, { end_col = rec.e1, hl_group = "PmenuSel", strict = false })
-        vim.api.nvim_buf_set_extmark(buf, ns, rec.l2 - 1, rec.s2, { end_col = rec.e2, hl_group = "PmenuSel", strict = false })
+        vim.api.nvim_buf_set_extmark(buf, ns, rec.l1 - 1, rec.s1, { end_col = rec.e1, hl_group = "XcodeTemplatesSelectedIcon", strict = false })
+        vim.api.nvim_buf_set_extmark(buf, ns, rec.l2 - 1, rec.s2, { end_col = rec.e2, hl_group = "XcodeTemplatesSelected", strict = false })
       else
-        vim.api.nvim_buf_set_extmark(buf, ns, rec.l1 - 1, rec.s1, { end_col = rec.e1, hl_group = "Special", strict = false })
+        vim.api.nvim_buf_set_extmark(buf, ns, rec.l1 - 1, rec.s1, { end_col = rec.e1, hl_group = "XcodeTemplatesIcon", strict = false })
       end
     end
 

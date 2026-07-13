@@ -62,9 +62,28 @@ SETUP                                                   *xcode-templates-setup*
       },
       add_to_project = true,        -- old-style pbxproj integration
       sync_header_on_rename = true, -- keep `//  File.swift` in sync
+      ai = {
+        enabled = true,             -- ✻ AI Suggestion template (needs a key)
+        api_key = nil,              -- string|function; default $ANTHROPIC_API_KEY
+        model = "claude-opus-4-8",
+        max_tokens = 16000,
+        effort = "low",             -- low|medium|high|xhigh|max
+        context_files = 30,
+      },
       templates = {},               -- extra user sections (see README)
     })
 <
+
+==============================================================================
+AI SUGGESTIONS                                          *xcode-templates-ai*
+
+With a Claude API key available ($ANTHROPIC_API_KEY, or `ai.api_key` as a
+string or function), the chooser gains an "Intelligence" section with an
+AI Suggestion template (id `ai-suggest`). Choosing it inserts the header
+plus a placeholder, then asynchronously asks Claude (via curl) to draft the
+file from its name, the detected intent, the project, and the names of
+sibling Swift files. Only file names are sent — never file contents. The
+key is passed to curl via stdin, never on the command line.
 
 ==============================================================================
 API                                                     *xcode-templates-api*

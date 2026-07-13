@@ -37,6 +37,9 @@ Pick a template and the file is filled with the familiar Xcode header and boiler
 
 - **Xcode-style chooser** — sectioned icon grid (*Source · Networking · App · Test · Other*)
   with a live, tree-sitter-highlighted preview pane of the generated code
+- **✻ AI Suggestion** — with a Claude API key configured, an *Intelligence* section appears:
+  pick it and Claude drafts the whole file from its name, project, and the sibling files
+  in the same folder (async — a placeholder shows while it thinks)
 - **Smart detection** — the file's name and location preselect the right template
   (see the [table below](#-smart-detection)); optionally skip the chooser entirely
 - **Xcode's "options" step** — *Cocoa Touch Class* asks which subclass
@@ -162,9 +165,46 @@ opts = {
   },
   add_to_project = true,        -- register files in old-style (non-synchronized) pbxproj
   sync_header_on_rename = true, -- keep `//  File.swift` in sync after renames
+  ai = {
+    enabled = true,             -- show the ✻ AI Suggestion template when a key is available
+    api_key = nil,              -- string or function; default: $ANTHROPIC_API_KEY
+    model = "claude-opus-4-8",  -- any Claude 4.6+/5-family model
+    max_tokens = 16000,
+    effort = "low",             -- low | medium | high | xhigh | max (speed vs depth)
+    context_files = 30,         -- max sibling file names sent as context
+  },
   templates = {},               -- your own sections, appended after the builtins
 }
 ```
+
+## ✻ AI Suggestions
+
+Export `ANTHROPIC_API_KEY` (or set `ai.api_key` — a string, or a function that reads
+your password manager) and an **Intelligence** section appears in the chooser with an
+*AI Suggestion* template. Choosing it inserts the Xcode header plus a placeholder,
+then asynchronously asks Claude to draft the file using the file name, the detected
+intent (`FooViewModel` → view model, etc.), the project name, and the names of the
+sibling Swift files in the folder. `:XcodeTemplate ai-suggest` triggers it directly.
+
+Security notes: the key is read lazily, never stored on disk by the plugin, and is
+passed to `curl` via stdin so it never appears in the process list. Only file *names*
+(never file contents) are sent as context. Requires `curl`.
+
+```lua
+-- example: key from macOS Keychain instead of the environment
+ai = {
+  api_key = function()
+    return vim.fn.system({ "security", "find-generic-password", "-s", "anthropic", "-w" }):gsub("%s+$", "")
+  end,
+},
+```
+
+## 🎨 Highlights
+
+The chooser uses theme-aware groups you can override: `XcodeTemplatesSection`,
+`XcodeTemplatesSeparator`, `XcodeTemplatesIcon`, `XcodeTemplatesSelected`,
+`XcodeTemplatesSelectedIcon`, `XcodeTemplatesMuted` (default links: Title,
+WinSeparator, Special, Visual, Visual, Comment).
 
 ## 🧩 Custom templates
 

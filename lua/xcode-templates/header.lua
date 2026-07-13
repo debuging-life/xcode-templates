@@ -60,6 +60,7 @@ function M.context(path, config)
     date = os.date("%Y-%m-%d")
   end
   return {
+    path = vim.fn.fnamemodify(path, ":p"),
     filename = vim.fn.fnamemodify(path, ":t"),
     name = M.identifier(vim.fn.fnamemodify(path, ":t:r")),
     project = project,

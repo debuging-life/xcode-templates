@@ -11,6 +11,7 @@ local M = {}
 ---@field detect { enabled: boolean, auto_apply: boolean } smart template detection from file name/location; auto_apply skips the chooser on confident matches
 ---@field add_to_project boolean register created files in old-style (non-synchronized) Xcode projects via the `xcodeproj` gem
 ---@field sync_header_on_rename boolean keep the `//  File.swift` header line in sync after renames
+---@field ai { enabled: boolean, api_key: string|fun():string|nil, model: string, max_tokens: integer, effort: string, context_files: integer } Claude-powered "AI Suggestion" template; active when an API key is available
 ---@field templates table[] extra user sections: { title = string, items = { {id, name, icon, desc?, options?, body} } }
 
 ---@return XcodeTemplates.Config
@@ -25,6 +26,14 @@ function M.defaults()
     detect = { enabled = true, auto_apply = false },
     add_to_project = true,
     sync_header_on_rename = true,
+    ai = {
+      enabled = true,
+      api_key = nil, -- string or function; default: $ANTHROPIC_API_KEY
+      model = "claude-opus-4-8",
+      max_tokens = 16000,
+      effort = "low", -- low | medium | high | xhigh | max
+      context_files = 30,
+    },
     templates = {},
   }
 end
@@ -52,6 +61,18 @@ function M.validate(cfg)
   check("detect.auto_apply", cfg.detect.auto_apply, "boolean")
   check("add_to_project", cfg.add_to_project, "boolean")
   check("sync_header_on_rename", cfg.sync_header_on_rename, "boolean")
+  check("ai", cfg.ai, "table")
+  check("ai.enabled", cfg.ai.enabled, "boolean")
+  check("ai.model", cfg.ai.model, "string")
+  check("ai.max_tokens", cfg.ai.max_tokens, "number")
+  check("ai.effort", cfg.ai.effort, "string")
+  check("ai.context_files", cfg.ai.context_files, "number")
+  if cfg.ai.api_key ~= nil and type(cfg.ai.api_key) ~= "string" and type(cfg.ai.api_key) ~= "function" then
+    error("xcode-templates: option `ai.api_key` must be a string or a function returning one", 0)
+  end
+  if not vim.tbl_contains({ "low", "medium", "high", "xhigh", "max" }, cfg.ai.effort) then
+    error("xcode-templates: option `ai.effort` must be one of low/medium/high/xhigh/max", 0)
+  end
   check("templates", cfg.templates, "table")
   if cfg.columns < 1 or cfg.columns > 6 then
     error("xcode-templates: option `columns` must be between 1 and 6", 0)
