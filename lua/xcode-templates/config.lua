@@ -7,7 +7,11 @@ local M = {}
 ---@field date_format string os.date() format used in the header
 ---@field author string|nil header author; defaults to `git config user.name`, then $USER
 ---@field columns integer grid columns in the chooser (1-6)
----@field templates table[] extra user sections: { title = string, items = { {id, name, icon, desc?, body} } }
+---@field preview boolean show the live code preview pane (when the terminal is wide enough)
+---@field detect { enabled: boolean, auto_apply: boolean } smart template detection from file name/location; auto_apply skips the chooser on confident matches
+---@field add_to_project boolean register created files in old-style (non-synchronized) Xcode projects via the `xcodeproj` gem
+---@field sync_header_on_rename boolean keep the `//  File.swift` header line in sync after renames
+---@field templates table[] extra user sections: { title = string, items = { {id, name, icon, desc?, options?, body} } }
 
 ---@return XcodeTemplates.Config
 function M.defaults()
@@ -17,6 +21,10 @@ function M.defaults()
     date_format = "%Y-%m-%d",
     author = nil,
     columns = 3,
+    preview = true,
+    detect = { enabled = true, auto_apply = false },
+    add_to_project = true,
+    sync_header_on_rename = true,
     templates = {},
   }
 end
@@ -38,6 +46,12 @@ function M.validate(cfg)
   check("date_format", cfg.date_format, "string")
   check("author", cfg.author, "string", true)
   check("columns", cfg.columns, "number")
+  check("preview", cfg.preview, "boolean")
+  check("detect", cfg.detect, "table")
+  check("detect.enabled", cfg.detect.enabled, "boolean")
+  check("detect.auto_apply", cfg.detect.auto_apply, "boolean")
+  check("add_to_project", cfg.add_to_project, "boolean")
+  check("sync_header_on_rename", cfg.sync_header_on_rename, "boolean")
   check("templates", cfg.templates, "table")
   if cfg.columns < 1 or cfg.columns > 6 then
     error("xcode-templates: option `columns` must be between 1 and 6", 0)
@@ -57,6 +71,19 @@ function M.validate(cfg)
           ("xcode-templates: templates[%d].items[%d].body must be a function(ctx) -> string[]"):format(si, ii),
           0
         )
+      end
+      if it.options ~= nil then
+        if type(it.options) ~= "table" then
+          error(("xcode-templates: templates[%d].items[%d].options must be a list"):format(si, ii), 0)
+        end
+        for oi, opt in ipairs(it.options) do
+          if type(opt.key) ~= "string" or type(opt.label) ~= "string" then
+            error(
+              ("xcode-templates: templates[%d].items[%d].options[%d] needs `key` and `label` strings"):format(si, ii, oi),
+              0
+            )
+          end
+        end
       end
     end
   end

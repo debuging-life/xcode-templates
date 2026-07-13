@@ -5,14 +5,25 @@ INTRODUCTION                                            *xcode-templates*
 
 xcode-templates.nvim reproduces Xcode's "Choose a template for your new
 file" dialog. Opening an empty .swift buffer (e.g. a file just created from
-a file explorer) pops a chooser with categorized templates; picking one
-fills the buffer with the Xcode comment header and the template boilerplate.
+a file explorer) pops a chooser with categorized templates and a live code
+preview; picking one fills the buffer with the Xcode comment header and the
+template boilerplate.
 
 The header fields are detected automatically:
 - file name    from the buffer name
 - project      nearest *.xcodeproj / *.xcworkspace / Package.swift upward
 - author       `git config user.name`, falling back to $USER
 - date         os.date() with the configured format
+
+Smart detection preselects a template from the file's name and location
+(FooView.swift → SwiftUI View, FooTests.swift in a Tests folder → Swift
+Testing, String+Trimming.swift → Extension, ...). Templates may define an
+Xcode-style "options" step (Cocoa Touch Class asks for the subclass, tests
+ask for the @testable module).
+
+For old-style Xcode projects (no synchronized folders), created files are
+registered in project.pbxproj and added to the app or test target via the
+`xcodeproj` Ruby gem. Xcode 16 synchronized projects need nothing.
 
 ==============================================================================
 COMMANDS                                                *:XcodeTemplate*
@@ -21,8 +32,8 @@ COMMANDS                                                *:XcodeTemplate*
     Without {id}: open the chooser. With {id} (completed with <Tab>, e.g.
     `swiftui-view`, `unit-test`): skip the chooser. If the current buffer is
     an empty swift file it is filled in place; otherwise you are prompted
-    for a new file path (with file completion) and the file is created,
-    opened and saved.
+    for a new file path (with file completion), then for any template
+    options, and the file is created, opened and saved.
 
 ==============================================================================
 CHOOSER KEYS                                            *xcode-templates-keys*
@@ -30,6 +41,7 @@ CHOOSER KEYS                                            *xcode-templates-keys*
   printable keys   live fuzzy filter (like Xcode's Filter box)
   <BS> / <C-u>     edit / clear the filter
   arrows, <Tab>    move the selection
+  <C-p>            toggle the code preview pane
   <CR>             choose the selected template
   <Esc>            clear the filter, or close when it is empty
 
@@ -38,12 +50,19 @@ SETUP                                                   *xcode-templates-setup*
 
 >lua
     require("xcode-templates").setup({
-      auto_pick = true,          -- chooser for empty .swift buffers
-      header = true,             -- prepend the // Xcode header
+      auto_pick = true,             -- chooser for empty .swift buffers
+      header = true,                -- prepend the // Xcode header
       date_format = "%Y-%m-%d",
-      author = nil,              -- default: git config user.name → $USER
-      columns = 3,               -- chooser grid columns (1-6)
-      templates = {},            -- extra user sections (see README)
+      author = nil,                 -- default: git config user.name → $USER
+      columns = 3,                  -- chooser grid columns (1-6)
+      preview = true,               -- live code preview pane
+      detect = {
+        enabled = true,             -- preselect from name/location
+        auto_apply = false,         -- skip the chooser on confident matches
+      },
+      add_to_project = true,        -- old-style pbxproj integration
+      sync_header_on_rename = true, -- keep `//  File.swift` in sync
+      templates = {},               -- extra user sections (see README)
     })
 <
 
@@ -51,17 +70,20 @@ SETUP                                                   *xcode-templates-setup*
 API                                                     *xcode-templates-api*
 
 require("xcode-templates").new({template}?)
-    Chooser (unless {template} given) → filename prompt → create the file.
+    Chooser (unless {template} given) → filename prompt → options → create.
 
 require("xcode-templates").fill({buf}?, {template}?)
     Fill an empty buffer. Refuses (with a warning) if the buffer has content.
 
-require("xcode-templates").create({template}, {path})
+require("xcode-templates").create({template}, {path}, {options}?)
     Scripting entry point: create {path} from a template id/name or table.
     Returns the buffer number, or nil plus an error message.
 
 require("xcode-templates").get({id_or_name})
     Look up a template by id (exact) or display name (case-insensitive).
+
+require("xcode-templates").sync_header({buf}?)
+    Update the header's `//  File.swift` line to match the buffer name.
 
 Run |:checkhealth| xcode-templates to diagnose setup issues.
 

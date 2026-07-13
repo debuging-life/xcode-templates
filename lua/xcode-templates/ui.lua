@@ -4,6 +4,7 @@
 ---  type anything   append to the live fuzzy filter (like Xcode's Filter box)
 ---  <BS> / <C-u>    delete from / clear the filter
 ---  arrows, <Tab>   move between templates
+---  <C-p>           toggle the code preview pane
 ---  <CR>            choose the selected template
 ---  <Esc>           clear the filter, or close when the filter is empty
 local M = {}
@@ -12,6 +13,7 @@ local ns = vim.api.nvim_create_namespace("xcode_templates_ui")
 
 local CELL_W = 20
 local GAP = 2
+local PREVIEW_W = 54
 
 ---@type table|nil the currently open picker controller (single instance)
 local active
@@ -35,7 +37,7 @@ end
 
 ---Open the chooser.
 ---@param sections table[] { title, items }
----@param opts { columns: integer? }|nil
+---@param opts { columns: integer?, preselect: string?, preview: (fun(item: table): string[])? }|nil
 ---@param on_choose fun(item: table|nil) called (scheduled) with the chosen item, or nil on cancel
 ---@return table controller { buf, win, state, close(), set_filter(txt), choose(id) } — used by tests/scripts
 function M.pick(sections, opts, on_choose)
@@ -57,7 +59,34 @@ function M.pick(sections, opts, on_choose)
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].filetype = "xcode-templates"
 
-  local state = { filter = "", sel = 1, items = {}, rows = {}, win = nil, height = 0, done = false }
+  local function preview_fits()
+    return vim.o.columns >= width + PREVIEW_W + 8
+  end
+
+  local state = {
+    filter = "",
+    sel = 1,
+    items = {},
+    rows = {},
+    win = nil,
+    height = 0,
+    done = false,
+    pv_open = opts.preview ~= nil and preview_fits(),
+    pv_buf = nil,
+    pv_win = nil,
+  }
+
+  local function total_width()
+    return width + (state.pv_open and (PREVIEW_W + 2) or 0)
+  end
+
+  local function grid_col()
+    return math.max(0, math.floor((vim.o.columns - total_width()) / 2))
+  end
+
+  local function grid_row()
+    return math.max(0, math.floor((vim.o.lines - state.height) / 2) - 1)
+  end
 
   local function footer_text()
     if state.filter ~= "" then
@@ -70,13 +99,13 @@ function M.pick(sections, opts, on_choose)
     return "  type to filter · ←↑↓→ move · ↵ choose · esc close  "
   end
 
-  local function win_config(height)
+  local function win_config()
     return {
       relative = "editor",
       width = width,
-      height = height,
-      col = math.max(0, math.floor((vim.o.columns - width) / 2)),
-      row = math.max(0, math.floor((vim.o.lines - height) / 2) - 1),
+      height = state.height,
+      col = grid_col(),
+      row = grid_row(),
       style = "minimal",
       border = "rounded",
       title = " Choose a template for your new file ",
@@ -84,6 +113,54 @@ function M.pick(sections, opts, on_choose)
       footer = footer_text(),
       footer_pos = "center",
     }
+  end
+
+  local function pv_config()
+    return {
+      relative = "editor",
+      width = PREVIEW_W,
+      height = state.height,
+      col = grid_col() + width + 2,
+      row = grid_row(),
+      style = "minimal",
+      border = "rounded",
+      title = " Preview ",
+      title_pos = "center",
+      focusable = false,
+    }
+  end
+
+  local function update_preview()
+    if not state.pv_open or state.done then
+      if state.pv_win and vim.api.nvim_win_is_valid(state.pv_win) then
+        vim.api.nvim_win_close(state.pv_win, true)
+      end
+      state.pv_win = nil
+      return
+    end
+    if not (state.pv_buf and vim.api.nvim_buf_is_valid(state.pv_buf)) then
+      state.pv_buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[state.pv_buf].buftype = "nofile"
+      vim.bo[state.pv_buf].bufhidden = "hide"
+      if not pcall(vim.treesitter.start, state.pv_buf, "swift") then
+        pcall(function()
+          vim.bo[state.pv_buf].syntax = "swift"
+        end)
+      end
+    end
+    local rec = state.items[state.sel]
+    local lines = {}
+    if rec and opts.preview then
+      local ok, res = pcall(opts.preview, rec.item)
+      lines = (ok and type(res) == "table") and res or { "// preview unavailable: " .. tostring(res) }
+    end
+    vim.api.nvim_buf_set_lines(state.pv_buf, 0, -1, false, lines)
+    if state.pv_win and vim.api.nvim_win_is_valid(state.pv_win) then
+      pcall(vim.api.nvim_win_set_config, state.pv_win, pv_config())
+    else
+      state.pv_win = vim.api.nvim_open_win(state.pv_buf, false, pv_config())
+      vim.wo[state.pv_win].wrap = false
+    end
   end
 
   local function filtered()
@@ -192,7 +269,8 @@ function M.pick(sections, opts, on_choose)
         local rec = state.items[state.sel]
         pcall(vim.api.nvim_win_set_cursor, state.win, { rec.l1, rec.s1 })
       end
-      pcall(vim.api.nvim_win_set_config, state.win, win_config(state.height))
+      pcall(vim.api.nvim_win_set_config, state.win, win_config())
+      update_preview()
     end
   end
 
@@ -202,6 +280,9 @@ function M.pick(sections, opts, on_choose)
     end
     state.done = true
     active = nil
+    if state.pv_win and vim.api.nvim_win_is_valid(state.pv_win) then
+      vim.api.nvim_win_close(state.pv_win, true)
+    end
     if state.win and vim.api.nvim_win_is_valid(state.win) then
       vim.api.nvim_win_close(state.win, true)
     end
@@ -243,10 +324,18 @@ function M.pick(sections, opts, on_choose)
     render()
   end
 
-  -- first render (no window yet) to measure the content height
+  -- first render (no window yet) to measure content height and build items
   render()
+  if opts.preselect then
+    for i, rec in ipairs(state.items) do
+      if rec.item.id == opts.preselect then
+        state.sel = i
+        break
+      end
+    end
+  end
   state.height = math.min(vim.api.nvim_buf_line_count(buf), math.max(vim.o.lines - 6, 5))
-  state.win = vim.api.nvim_open_win(buf, true, win_config(state.height))
+  state.win = vim.api.nvim_open_win(buf, true, win_config())
   vim.wo[state.win].cursorline = false
   vim.wo[state.win].wrap = false
   vim.wo[state.win].scrolloff = 2
@@ -272,6 +361,12 @@ function M.pick(sections, opts, on_choose)
   map("<down>", function() move(0, 1) end)
   map("<tab>", function() move(1, 0) end)
   map("<s-tab>", function() move(-1, 0) end)
+  map("<c-p>", function()
+    if opts.preview then
+      state.pv_open = not state.pv_open and preview_fits()
+      render()
+    end
+  end)
   map("<bs>", function()
     if state.filter ~= "" then
       state.filter = vim.fn.strcharpart(state.filter, 0, vim.fn.strchars(state.filter) - 1)
@@ -318,8 +413,9 @@ function M.pick(sections, opts, on_choose)
         return true -- delete this autocmd
       end
       if state.win and vim.api.nvim_win_is_valid(state.win) then
+        state.pv_open = state.pv_open and preview_fits()
         state.height = math.min(vim.api.nvim_buf_line_count(buf), math.max(vim.o.lines - 6, 5))
-        pcall(vim.api.nvim_win_set_config, state.win, win_config(state.height))
+        render()
       end
     end,
   })

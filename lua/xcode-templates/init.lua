@@ -5,6 +5,8 @@ local Config = require("xcode-templates.config")
 local Header = require("xcode-templates.header")
 local Templates = require("xcode-templates.templates")
 local Ui = require("xcode-templates.ui")
+local Detect = require("xcode-templates.detect")
+local Pbxproj = require("xcode-templates.pbxproj")
 
 local uv = vim.uv or vim.loop
 
@@ -44,12 +46,86 @@ function M.get(id_or_name)
   end
 end
 
+-- options (Xcode's second step) ---------------------------------------------
+
+local function option_default(opt, ctx)
+  local d = opt.default
+  if type(d) == "function" then
+    local ok, val = pcall(d, ctx)
+    d = ok and val or nil
+  end
+  if d ~= nil then
+    return d
+  end
+  if opt.choices then
+    return opt.choices[1]
+  end
+  return ""
+end
+
+---Resolved default values for every option of a template (no prompting).
+local function option_defaults(template, ctx)
+  local out = {}
+  for _, opt in ipairs(template.options or {}) do
+    out[opt.key] = option_default(opt, ctx)
+  end
+  return out
+end
+
+---Prompt for each template option sequentially, like Xcode's "Next" page.
+---@param template table
+---@param ctx table
+---@param cb fun(values: table|nil) nil means the user cancelled
+local function resolve_options(template, ctx, cb)
+  local opts = template.options or {}
+  if #opts == 0 then
+    return cb({})
+  end
+  local values = {}
+  local function step(i)
+    local opt = opts[i]
+    if not opt then
+      return cb(values)
+    end
+    local default = option_default(opt, ctx)
+    if opt.choices then
+      -- default first so plain <CR> confirms it
+      local choices = { default }
+      for _, c in ipairs(opt.choices) do
+        if c ~= default then
+          choices[#choices + 1] = c
+        end
+      end
+      vim.ui.select(choices, { prompt = opt.label }, function(choice)
+        if choice == nil then
+          return cb(nil)
+        end
+        values[opt.key] = choice
+        step(i + 1)
+      end)
+    else
+      vim.ui.input({ prompt = opt.label .. ": ", default = default }, function(input)
+        if input == nil then
+          return cb(nil)
+        end
+        values[opt.key] = vim.trim(input) ~= "" and vim.trim(input) or default
+        step(i + 1)
+      end)
+    end
+  end
+  step(1)
+end
+
+-- applying -------------------------------------------------------------------
+
 ---Insert header + template body into `buf` (does not check emptiness — see M.fill).
 ---@param buf integer 0 for current
 ---@param template table
-function M.apply(buf, template)
+---@param options table|nil resolved option values; defaults are used when omitted
+function M.apply(buf, template, options)
   buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
   local ctx = Header.context(vim.api.nvim_buf_get_name(buf), M.config)
+  ctx.options = vim.tbl_extend("force", option_defaults(template, ctx), options or {})
   local lines, header_len = {}, 0
   if M.config.header then
     lines = Header.lines(ctx)
@@ -79,8 +155,9 @@ end
 ---Create `path` on disk from a template and open it. Scripting/test entry point.
 ---@param template string|table template id/name or template table
 ---@param path string file path; the template's extension is appended if none given
+---@param options table|nil resolved option values
 ---@return integer|nil buf, string|nil err
-function M.create(template, path)
+function M.create(template, path, options)
   if type(template) == "string" then
     local t = M.get(template)
     if not t then
@@ -107,12 +184,39 @@ function M.create(template, path)
     return nil, ("could not open buffer: %s"):format(editerr)
   end
   local buf = vim.api.nvim_get_current_buf()
-  M.apply(buf, template)
+  M.apply(buf, template, options)
   local okw, werr = pcall(vim.cmd.write)
   if not okw then
     return nil, ("could not write %s: %s"):format(vim.fn.fnamemodify(full, ":~:."), werr)
   end
+  if M.config.add_to_project then
+    Pbxproj.add(full, template.target == "test" and "test" or "app")
+  end
   return buf
+end
+
+-- flows ------------------------------------------------------------------------
+
+---Header + body preview lines for the chooser's preview pane.
+local function preview_builder(path)
+  return function(item)
+    local ctx = Header.context(path, M.config)
+    ctx.options = option_defaults(item, ctx)
+    local lines = M.config.header and Header.lines(ctx) or {}
+    local ok, body = pcall(item.body, ctx)
+    if not ok then
+      return { "// preview unavailable: " .. tostring(body) }
+    end
+    return vim.list_extend(vim.list_extend({}, lines), body)
+  end
+end
+
+local function open_chooser(path, preselect, on_item)
+  Ui.pick(all_sections(), {
+    columns = M.config.columns,
+    preselect = preselect,
+    preview = M.config.preview and preview_builder(path) or nil,
+  }, on_item)
 end
 
 ---Prompt for the new file's path (with file completion) and create it.
@@ -138,15 +242,21 @@ local function prompt_filename(template, default)
     if not input or vim.trim(input) == "" or input:sub(-1) == "/" then
       return -- cancelled
     end
-    local _, err = M.create(template, input)
-    if err then
-      notify(err)
-      if err:find("already exists", 1, true) then
-        vim.schedule(function()
-          prompt_filename(template, input)
-        end)
+    local ctx = Header.context(input, M.config)
+    resolve_options(template, ctx, function(values)
+      if values == nil then
+        return -- cancelled at the options step
       end
-    end
+      local _, err = M.create(template, input, values)
+      if err then
+        notify(err)
+        if err:find("already exists", 1, true) then
+          vim.schedule(function()
+            prompt_filename(template, input)
+          end)
+        end
+      end
+    end)
   end)
 end
 
@@ -159,28 +269,70 @@ function M.fill(buf, template)
     notify("buffer is not empty — refusing to overwrite", vim.log.levels.WARN)
     return
   end
-  if template then
-    return M.apply(buf, template)
-  end
-  Ui.pick(all_sections(), { columns = M.config.columns }, function(item)
-    if item and vim.api.nvim_buf_is_valid(buf) and buf_is_empty(buf) then
-      M.apply(buf, item)
+  local path = vim.api.nvim_buf_get_name(buf)
+
+  local function finish(item)
+    if not item then
+      return
     end
-  end)
+    local ctx = Header.context(path, M.config)
+    resolve_options(item, ctx, function(values)
+      if values == nil then
+        return
+      end
+      if vim.api.nvim_buf_is_valid(buf) and buf_is_empty(buf) then
+        M.apply(buf, item, values)
+      end
+    end)
+  end
+
+  if template then
+    return finish(template)
+  end
+
+  local preselect
+  if M.config.detect.enabled and path ~= "" then
+    local d = Detect.detect(path)
+    if d.template and M.get(d.template) then
+      if d.confident and M.config.detect.auto_apply then
+        return finish(M.get(d.template))
+      end
+      preselect = d.template
+    end
+  end
+  open_chooser(path, preselect, finish)
 end
 
----Create a new file: chooser (unless a template is given) → filename prompt → create.
+---Create a new file: chooser (unless a template is given) → filename prompt
+---(with path completion) → options → create.
 ---@param template table|nil
 function M.new(template)
-  if template then
-    return prompt_filename(template)
-  end
-  Ui.pick(all_sections(), { columns = M.config.columns }, function(item)
+  local function with_template(item)
     if item then
       prompt_filename(item)
     end
-  end)
+  end
+  if template then
+    return with_template(template)
+  end
+  local placeholder = vim.fs.joinpath(vim.fn.getcwd(), "MyFile.swift")
+  open_chooser(placeholder, nil, with_template)
 end
+
+---Keep the header's `//  File.swift` line in sync after renames.
+---@param buf integer|nil
+function M.sync_header(buf)
+  buf = (buf == nil or buf == 0) and vim.api.nvim_get_current_buf() or buf
+  local l = vim.api.nvim_buf_get_lines(buf, 0, 2, false)
+  if l[1] == "//" and l[2] and l[2]:match("^//  %S.*%.swift%s*$") then
+    local actual = "//  " .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t")
+    if l[2] ~= actual then
+      vim.api.nvim_buf_set_lines(buf, 1, 2, false, { actual })
+    end
+  end
+end
+
+-- setup --------------------------------------------------------------------------
 
 ---@param opts XcodeTemplates.Config|nil
 function M.setup(opts)
@@ -211,6 +363,17 @@ function M.setup(opts)
       end)
     end,
   })
+
+  if M.config.sync_header_on_rename then
+    vim.api.nvim_create_autocmd({ "BufFilePost", "BufWritePre" }, {
+      group = group,
+      pattern = "*.swift",
+      desc = "Keep the //  File.swift header line in sync with the file name",
+      callback = function(ev)
+        M.sync_header(ev.buf)
+      end,
+    })
+  end
 
   vim.api.nvim_create_user_command("XcodeTemplate", function(cmd)
     local template
