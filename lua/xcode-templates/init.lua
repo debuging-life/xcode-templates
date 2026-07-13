@@ -54,6 +54,33 @@ local function buf_is_empty(buf)
   return (vim.api.nvim_buf_get_lines(buf, 0, 1, false)[1] or "") == ""
 end
 
+---Make sure the current window can display a file buffer. Invoked from an
+---explorer/picker, the current window is 'winfixbuf'-locked (or a prompt),
+---so `:edit` there fails and the file is never opened or written. Move to
+---an existing normal window in this tab, or split one off.
+local function ensure_normal_window()
+  local function usable(win)
+    if vim.api.nvim_win_get_config(win).relative ~= "" then
+      return false -- floating (picker, prompt, our chooser)
+    end
+    local fixed = false
+    pcall(function()
+      fixed = vim.wo[win].winfixbuf
+    end)
+    return not fixed and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == ""
+  end
+  if usable(vim.api.nvim_get_current_win()) then
+    return
+  end
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if usable(win) then
+      vim.api.nvim_set_current_win(win)
+      return
+    end
+  end
+  vim.cmd("botright vsplit")
+end
+
 ---Explorers don't watch for files created outside their own actions —
 ---nudge any open one to reload after we write a file to disk.
 local function refresh_explorers()
@@ -262,6 +289,7 @@ function M.create(template, path, options)
   if not okmk then
     return nil, ("could not create directory: %s"):format(mkerr)
   end
+  ensure_normal_window()
   local okedit, editerr = pcall(vim.cmd.edit, vim.fn.fnameescape(full))
   if not okedit then
     return nil, ("could not open buffer: %s"):format(editerr)
