@@ -1,0 +1,68 @@
+*xcode-templates.txt*  Xcode-style "New File" templates for Neovim
+
+==============================================================================
+INTRODUCTION                                            *xcode-templates*
+
+xcode-templates.nvim reproduces Xcode's "Choose a template for your new
+file" dialog. Opening an empty .swift buffer (e.g. a file just created from
+a file explorer) pops a chooser with categorized templates; picking one
+fills the buffer with the Xcode comment header and the template boilerplate.
+
+The header fields are detected automatically:
+- file name    from the buffer name
+- project      nearest *.xcodeproj / *.xcworkspace / Package.swift upward
+- author       `git config user.name`, falling back to $USER
+- date         os.date() with the configured format
+
+==============================================================================
+COMMANDS                                                *:XcodeTemplate*
+
+:XcodeTemplate [{id}]
+    Without {id}: open the chooser. With {id} (completed with <Tab>, e.g.
+    `swiftui-view`, `unit-test`): skip the chooser. If the current buffer is
+    an empty swift file it is filled in place; otherwise you are prompted
+    for a new file path (with file completion) and the file is created,
+    opened and saved.
+
+==============================================================================
+CHOOSER KEYS                                            *xcode-templates-keys*
+
+  printable keys   live fuzzy filter (like Xcode's Filter box)
+  <BS> / <C-u>     edit / clear the filter
+  arrows, <Tab>    move the selection
+  <CR>             choose the selected template
+  <Esc>            clear the filter, or close when it is empty
+
+==============================================================================
+SETUP                                                   *xcode-templates-setup*
+
+>lua
+    require("xcode-templates").setup({
+      auto_pick = true,          -- chooser for empty .swift buffers
+      header = true,             -- prepend the // Xcode header
+      date_format = "%Y-%m-%d",
+      author = nil,              -- default: git config user.name → $USER
+      columns = 3,               -- chooser grid columns (1-6)
+      templates = {},            -- extra user sections (see README)
+    })
+<
+
+==============================================================================
+API                                                     *xcode-templates-api*
+
+require("xcode-templates").new({template}?)
+    Chooser (unless {template} given) → filename prompt → create the file.
+
+require("xcode-templates").fill({buf}?, {template}?)
+    Fill an empty buffer. Refuses (with a warning) if the buffer has content.
+
+require("xcode-templates").create({template}, {path})
+    Scripting entry point: create {path} from a template id/name or table.
+    Returns the buffer number, or nil plus an error message.
+
+require("xcode-templates").get({id_or_name})
+    Look up a template by id (exact) or display name (case-insensitive).
+
+Run |:checkhealth| xcode-templates to diagnose setup issues.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
