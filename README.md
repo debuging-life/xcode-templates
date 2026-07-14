@@ -370,7 +370,12 @@ most recent exchanges are replayed to Claude as real conversation turns. That
 means follow-ups just work: ask *"how do I make this thread safe"*, then
 *"now show the actor version"* — the second question knows the first answer.
 
-- **`f` in any answer float** — ask a follow-up inline (same conversation).
+- **`f` in any answer float** — ask a follow-up **in the same window**: the new
+  question and answer append below the previous ones (with an inline
+  *✻ thinking…* placeholder), chat-style. For selection answers, `a` always
+  applies the **latest** answer and the target range stays aligned across
+  repeated applies — so you can iterate: *refactor* → apply → *"now add error
+  handling"* → apply.
 - **`:XcodeHistory`** — browse this project's past exchanges (newest first);
   picking one reopens its answer, follow-up included.
 - **`:XcodeHistory clear`** — wipe the project's history (also the reset button
@@ -416,10 +421,10 @@ mid-typing without leaving insert mode. All configurable / disable with `false`.
 | Key | Action |
 |---|---|
 | `←` `↑` `↓` `→` | move the float around the editor |
-| `f` | ask a follow-up (continues the conversation) |
-| `o` | pop out into a native TextEdit window (draggable to any screen) |
-| `a` | apply as replacement *(selection answers only)* |
-| `y` | yank the answer |
+| `f` | ask more — the follow-up Q&A appends into the same window |
+| `o` | pop out the whole conversation into a native TextEdit window (draggable to any screen) |
+| `a` | apply the **latest** answer as replacement *(selection answers; repeatable — the range stays aligned)* |
+| `y` | yank the latest answer |
 | `q` / `<Esc>` | close |
 
 ### Suggested LazyVim spec (all of the above under `<leader>i`)
