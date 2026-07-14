@@ -37,6 +37,12 @@ function M.defaults()
         how = "<C-x><C-h>", -- typed question → answer float
         voice = "<C-x><C-v>", -- toggle voice question
       },
+      history = {
+        enabled = true, -- persist Q&A per project + replay as conversation context
+        turns = 6, -- recent exchanges sent back to Claude with each question
+        max_entries = 200, -- stored exchanges per project
+        dir = nil, -- storage dir; default: stdpath("data")/xcode-templates/history
+      },
       suggest = {
         keymap = "<C-x><C-a>", -- swift buffers, insert+normal; false to disable
         max_tokens = 4096,
@@ -100,6 +106,11 @@ function M.validate(cfg)
       error(("xcode-templates: option `ai.keymaps.%s` must be a string or false"):format(k), 0)
     end
   end
+  check("ai.history", cfg.ai.history, "table")
+  check("ai.history.enabled", cfg.ai.history.enabled, "boolean")
+  check("ai.history.turns", cfg.ai.history.turns, "number")
+  check("ai.history.max_entries", cfg.ai.history.max_entries, "number")
+  check("ai.history.dir", cfg.ai.history.dir, "string", true)
   check("ai.suggest", cfg.ai.suggest, "table")
   check("ai.suggest.max_tokens", cfg.ai.suggest.max_tokens, "number")
   check("ai.suggest.context_before", cfg.ai.suggest.context_before, "number")

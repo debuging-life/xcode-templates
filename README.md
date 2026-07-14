@@ -358,6 +358,23 @@ picked automatically (`ai.voice.mode = "auto"`):
 
 macOS asks for microphone permission for your terminal on first use.
 
+### 🧠 Conversation history
+
+Every Q&A — voice, `:XcodeHow`, and selection asks — is recorded **per project**
+(`stdpath("data")/xcode-templates/history/`, JSON, survives restarts) and the
+most recent exchanges are replayed to Claude as real conversation turns. That
+means follow-ups just work: ask *"how do I make this thread safe"*, then
+*"now show the actor version"* — the second question knows the first answer.
+
+- **`f` in any answer float** — ask a follow-up inline (same conversation).
+- **`:XcodeHistory`** — browse this project's past exchanges (newest first);
+  picking one reopens its answer, follow-up included.
+- **`:XcodeHistory clear`** — wipe the project's history (also the reset button
+  when you want a fresh conversation with no carried context).
+
+Configure under `ai.history`: `enabled`, `turns` (exchanges replayed as context,
+default 6), `max_entries` (stored per project, default 200), `dir`.
+
 ## ⌨️ AI keybindings
 
 ### Ctrl bindings (swift buffers, insert + normal mode)
@@ -379,6 +396,7 @@ mid-typing without leaving insert mode. All configurable / disable with `false`.
 | `:'<,'>XcodeAI [instruction]` | visual range | act on the selection (review / implement / refactor / custom); prompts when the instruction is omitted |
 | `:XcodeHow [question]` | — | typed question about the code around the cursor → answer float |
 | `:XcodeVoice` | — | toggle voice capture → transcript becomes the question → answer float |
+| `:XcodeHistory [clear]` | — | browse (or wipe) this project's Q&A history |
 | `:XcodeTemplate ai-suggest` | — | AI-draft a whole new file |
 
 ### While a ghost suggestion is visible
@@ -394,6 +412,7 @@ mid-typing without leaving insert mode. All configurable / disable with `false`.
 | Key | Action |
 |---|---|
 | `←` `↑` `↓` `→` | move the float around the editor |
+| `f` | ask a follow-up (continues the conversation) |
 | `o` | pop out into a native TextEdit window (draggable to any screen) |
 | `a` | apply as replacement *(selection answers only)* |
 | `y` | yank the answer |

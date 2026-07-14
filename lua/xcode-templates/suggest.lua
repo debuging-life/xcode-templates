@@ -164,7 +164,7 @@ end
 ---(draggable to any screen) · `y` yanks · `a` applies as replacement (when a
 ---source range was given) · `q`/<Esc> closes. It stays open while you keep
 ---coding in other windows.
----@param opts { title: string, lines: string[], src_buf?: integer, srow?: integer, erow?: integer }
+---@param opts { title: string, lines: string[], src_buf?: integer, srow?: integer, erow?: integer, follow_up?: fun(question: string) }
 ---@return integer win
 function M.float(opts)
   local lines = opts.lines
@@ -187,8 +187,10 @@ function M.float(opts)
     border = "rounded",
     title = " " .. opts.title .. " ",
     title_pos = "center",
-    footer = can_apply and "  ⇄ arrows move · a apply · o pop out · y yank · q close  "
-      or "  ⇄ arrows move · o pop out · y yank · q close  ",
+    footer = "  ⇄ move"
+      .. (can_apply and " · a apply" or "")
+      .. (opts.follow_up and " · f follow-up" or "")
+      .. " · o pop out · y yank · q close  ",
     footer_pos = "center",
   })
   vim.wo[win].wrap = true
@@ -242,6 +244,16 @@ function M.float(opts)
       end
     end, "Apply as replacement")
   end
+  if opts.follow_up then
+    map("f", function()
+      vim.ui.input({ prompt = "Follow-up: " }, function(q)
+        if q and vim.trim(q) ~= "" then
+          close()
+          opts.follow_up(q)
+        end
+      end)
+    end, "Ask a follow-up (with conversation context)")
+  end
   return win
 end
 
@@ -258,9 +270,11 @@ end
 
 ---Ask a free-form question about the code around the cursor; the answer opens
 ---in a float and the source file is never modified. Used by voice input.
+---Recent exchanges are replayed as conversation context, so follow-ups work.
 ---@param config XcodeTemplates.Config
 ---@param question string
-function M.ask_at_cursor(config, question)
+---@param kind string|nil "how" (default) or "voice" — recorded in history
+function M.ask_at_cursor(config, question, kind)
   if not Ai.available(config) then
     return vim.notify(
       "xcode-templates: no Claude credentials — set $ANTHROPIC_API_KEY or run `ant auth login`",
@@ -290,6 +304,7 @@ function M.ask_at_cursor(config, question)
     "",
     "Question: " .. question,
   }, "\n")
+  local History = require("xcode-templates.history")
   local Progress = require("xcode-templates.progress")
   Progress.start({ title = "✻ asking Claude", text = '"' .. question .. '"' })
   Ai.complete(system, user, config, scfg.max_tokens, function(lines, err)
@@ -303,9 +318,21 @@ function M.ask_at_cursor(config, question)
     if #lines == 0 then
       return vim.notify("xcode-templates: empty answer", vim.log.levels.WARN)
     end
+    History.add(config, {
+      kind = kind or "how",
+      file = ctx.filename,
+      question = question,
+      answer = table.concat(lines, "\n"),
+    })
     local title = "✻ " .. (question:len() > 60 and (question:sub(1, 57) .. "…") or question)
-    M.float({ title = title, lines = lines })
-  end)
+    M.float({
+      title = title,
+      lines = lines,
+      follow_up = function(q)
+        M.ask_at_cursor(config, q, kind)
+      end,
+    })
+  end, History.recent_messages(config))
 end
 
 ---Ask Claude about a selection: review, implement, refactor, or anything.
@@ -358,6 +385,7 @@ function M.ask(config, instruction, srow, erow)
       "",
       "Instruction: " .. instr,
     }, "\n")
+    local History = require("xcode-templates.history")
     local Progress = require("xcode-templates.progress")
     Progress.start({ title = "✻ asking Claude", text = ('"%s" on lines %d–%d…'):format(instr, srow, erow) })
     Ai.complete(system, user, config, config.ai.suggest.max_tokens, function(lines, err)
@@ -371,8 +399,25 @@ function M.ask(config, instruction, srow, erow)
       if #lines == 0 then
         return vim.notify("xcode-templates: empty answer", vim.log.levels.WARN)
       end
-      M.result_float(buf, srow, erow, lines)
-    end)
+      History.add(config, {
+        kind = "ask",
+        file = ctx.filename,
+        question = instr,
+        answer = table.concat(lines, "\n"),
+        srow = srow,
+        erow = erow,
+      })
+      M.float({
+        title = ("✻ Claude — lines %d–%d"):format(srow, erow),
+        lines = lines,
+        src_buf = buf,
+        srow = srow,
+        erow = erow,
+        follow_up = function(q)
+          run(q)
+        end,
+      })
+    end, History.recent_messages(config))
   end
 
   if instruction and vim.trim(instruction) ~= "" then

@@ -172,12 +172,18 @@ end
 ---@param user string
 ---@param max_tokens integer|nil defaults to `ai.max_tokens`
 ---@param cb fun(lines: string[]|nil, err: string|nil)
-local function api_call(config, system, user, max_tokens, cb)
+---@param prior { role: string, content: string }[]|nil earlier conversation turns
+local function api_call(config, system, user, max_tokens, cb, prior)
+  local messages = {}
+  for _, m in ipairs(prior or {}) do
+    messages[#messages + 1] = m
+  end
+  messages[#messages + 1] = { role = "user", content = user }
   local request = {
     model = config.ai.model,
     max_tokens = max_tokens or config.ai.max_tokens,
     system = system,
-    messages = { { role = "user", content = user } },
+    messages = messages,
   }
   -- adaptive thinking + effort exist on Claude 4.6+/5 models; Haiku rejects both
   if not config.ai.model:find("haiku", 1, true) then
@@ -232,14 +238,15 @@ function M.generate(ctx, config, hint, cb)
   api_call(config, system, user, config.ai.max_tokens, cb)
 end
 
----Free-form completion request (used by inline suggestions).
+---Free-form completion request (used by inline suggestions and Q&A).
 ---@param system string
 ---@param user string
 ---@param config XcodeTemplates.Config
 ---@param max_tokens integer|nil
 ---@param cb fun(lines: string[]|nil, err: string|nil)
-function M.complete(system, user, config, max_tokens, cb)
-  api_call(config, system, user, max_tokens, cb)
+---@param prior { role: string, content: string }[]|nil earlier conversation turns
+function M.complete(system, user, config, max_tokens, cb, prior)
+  api_call(config, system, user, max_tokens, cb, prior)
 end
 
 return M

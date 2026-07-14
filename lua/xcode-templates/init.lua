@@ -584,7 +584,7 @@ function M.voice()
       if vim.api.nvim_win_is_valid(win) then
         vim.api.nvim_set_current_win(win)
       end
-      require("xcode-templates.suggest").ask_at_cursor(M.config, text)
+      require("xcode-templates.suggest").ask_at_cursor(M.config, text, "voice")
     end,
   })
 end
@@ -594,13 +594,32 @@ end
 function M.how(question)
   local function run(q)
     if q and vim.trim(q) ~= "" then
-      require("xcode-templates.suggest").ask_at_cursor(M.config, q)
+      require("xcode-templates.suggest").ask_at_cursor(M.config, q, "how")
     end
   end
   if question and question ~= "" then
     return run(question)
   end
   vim.ui.input({ prompt = "Ask AI (answer opens in a float): " }, run)
+end
+
+---Browse this project's AI history (`clear` wipes it). Selecting an exchange
+---reopens its answer in the float, with follow-up available.
+---@param arg string|nil "clear"
+function M.history(arg)
+  local History = require("xcode-templates.history")
+  if arg == "clear" then
+    return History.clear(M.config)
+  end
+  History.browse(M.config, function(entry)
+    require("xcode-templates.suggest").float({
+      title = "✻ " .. (entry.question:len() > 60 and (entry.question:sub(1, 57) .. "…") or entry.question),
+      lines = vim.split(entry.answer, "\n", { plain = true }),
+      follow_up = function(q)
+        require("xcode-templates.suggest").ask_at_cursor(M.config, q, entry.kind)
+      end,
+    })
+  end)
 end
 
 ---Keep the header's `//  File.swift` line in sync after renames.
@@ -701,6 +720,16 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("XcodeSuggest", function()
     M.suggest()
   end, { desc = "AI: complete at the cursor (ghost text)" })
+
+  vim.api.nvim_create_user_command("XcodeHistory", function(cmd)
+    M.history(cmd.args ~= "" and cmd.args or nil)
+  end, {
+    nargs = "?",
+    complete = function()
+      return { "clear" }
+    end,
+    desc = "AI: browse this project's Q&A history (`clear` wipes it)",
+  })
 
   vim.api.nvim_create_user_command("XcodeVoice", function()
     M.voice()
