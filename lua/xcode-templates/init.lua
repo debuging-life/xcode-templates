@@ -81,8 +81,32 @@ local function ensure_normal_window()
   vim.cmd("botright vsplit")
 end
 
+---During (re)initialization sourcekit-lsp answers early requests with
+---"-32003: No workspace containing 'file://…'" — harmless races that nvim
+---surfaces as error notifications. Filter exactly that message.
+---Installed over whatever notifier is active (and re-installed if another
+---plugin replaces vim.notify later).
+local noise_wrapper
+local function install_sourcekit_noise_filter()
+  if not M.config.quiet_sourcekit_errors then
+    return
+  end
+  if noise_wrapper and vim.notify == noise_wrapper then
+    return
+  end
+  local downstream = vim.notify
+  noise_wrapper = function(msg, ...)
+    if type(msg) == "string" and msg:find("No workspace containing", 1, true) then
+      return
+    end
+    return downstream(msg, ...)
+  end
+  vim.notify = noise_wrapper
+end
+
 ---Restart sourcekit-lsp so it re-reads compiler arguments from fresh build logs.
 local function restart_sourcekit()
+  install_sourcekit_noise_filter()
   vim.defer_fn(function()
     local ok = pcall(vim.cmd, "LspRestart sourcekit")
     if not ok then
@@ -746,6 +770,7 @@ function M.setup(opts)
     end
   end
   Config.validate(M.config)
+  install_sourcekit_noise_filter()
 
   local group = vim.api.nvim_create_augroup("xcode_templates", { clear = true })
   vim.api.nvim_create_autocmd({ "BufNewFile", "BufReadPost" }, {

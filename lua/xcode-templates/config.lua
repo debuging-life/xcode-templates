@@ -32,6 +32,9 @@ function M.defaults()
     -- silently `xcodebuild` in the background after creating a file (what
     -- Xcode does invisibly), so its types resolve everywhere within seconds
     auto_index_build = true,
+    -- hide sourcekit-lsp's harmless "No workspace containing 'file://…'"
+    -- error notifications (races while the server (re)initializes)
+    quiet_sourcekit_errors = true,
     ai = {
       enabled = true,
       api_key = nil, -- string or function; default: $ANTHROPIC_API_KEY
@@ -95,6 +98,7 @@ function M.validate(cfg)
   check("sync_header_on_rename", cfg.sync_header_on_rename, "boolean")
   check("lsp_restart_on_build", cfg.lsp_restart_on_build, "boolean")
   check("auto_index_build", cfg.auto_index_build, "boolean")
+  check("quiet_sourcekit_errors", cfg.quiet_sourcekit_errors, "boolean")
   check("ai", cfg.ai, "table")
   check("ai.enabled", cfg.ai.enabled, "boolean")
   check("ai.model", cfg.ai.model, "string")
