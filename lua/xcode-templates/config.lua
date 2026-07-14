@@ -33,6 +33,10 @@ function M.defaults()
       max_tokens = 16000,
       effort = "low", -- low | medium | high | xhigh | max
       context_files = 30,
+      keymaps = { -- swift buffers, insert+normal; set any to false to disable
+        how = "<C-x><C-h>", -- typed question → answer float
+        voice = "<C-x><C-v>", -- toggle voice question
+      },
       suggest = {
         keymap = "<C-x><C-a>", -- swift buffers, insert+normal; false to disable
         max_tokens = 4096,
@@ -88,6 +92,13 @@ function M.validate(cfg)
   end
   if not vim.tbl_contains({ "low", "medium", "high", "xhigh", "max" }, cfg.ai.effort) then
     error("xcode-templates: option `ai.effort` must be one of low/medium/high/xhigh/max", 0)
+  end
+  check("ai.keymaps", cfg.ai.keymaps, "table")
+  for _, k in ipairs({ "how", "voice" }) do
+    local v = cfg.ai.keymaps[k]
+    if v ~= nil and v ~= false and type(v) ~= "string" then
+      error(("xcode-templates: option `ai.keymaps.%s` must be a string or false"):format(k), 0)
+    end
   end
   check("ai.suggest", cfg.ai.suggest, "table")
   check("ai.suggest.max_tokens", cfg.ai.suggest.max_tokens, "number")

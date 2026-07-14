@@ -172,6 +172,20 @@ opts = {
     max_tokens = 16000,
     effort = "low",             -- low | medium | high | xhigh | max (speed vs depth)
     context_files = 30,         -- max sibling file names sent as context
+    suggest = {
+      keymap = "<C-x><C-a>",    -- swift buffers, insert+normal; false to disable
+      max_tokens = 4096,
+      context_before = 120,     -- lines of code sent before the cursor
+      context_after = 40,       -- lines of code sent after the cursor
+    },
+    voice = {
+      mode = "auto",            -- "auto" | "record" (whisper) | "stream" (live text)
+      record = { "sox", "-q", "-d", "-r", "16000", "-c", "1", "$FILE" },
+      transcribe = { "whisper-cli", "-m", "$MODEL", "-f", "$FILE", "-l", "$LANG", "-np", "-nt" },
+      model = "small",          -- whisper model, auto-downloaded (tiny/base/small/medium)
+      language = "en",
+      command = { "hear" },     -- stream-mode fallback CLI
+    },
   },
   templates = {},               -- your own sections, appended after the builtins
 }
@@ -193,6 +207,14 @@ with an *AI Suggestion* template:
 
 Resolution order: `ai.api_key` → `$ANTHROPIC_API_KEY` → `ant auth login` profile.
 
+### Drafting whole files
+
+Choosing the ✻ *AI Suggestion* template in the chooser inserts the Xcode header plus
+a placeholder, then asynchronously asks Claude to draft the file using the file name,
+the detected intent (`FooViewModel` → view model, etc.), the project name, and the
+names of the sibling Swift files in the folder. `:XcodeTemplate ai-suggest` triggers
+it directly.
+
 ### Inline suggestions & selection actions
 
 Beyond drafting whole files, the same credentials power in-editor assistance:
@@ -203,17 +225,6 @@ Beyond drafting whole files, the same credentials power in-editor assistance:
 | **Complete at cursor** | trigger the same key mid-statement / mid-function | Claude finishes the current construct as ghost text |
 | **Ask about a selection** | visually select code → `:'<,'>XcodeAI` (prompts) or `:'<,'>XcodeAI review this for retain cycles` | answer opens in a float — `a` applies it as a replacement for the selection, `y` yanks, `q` closes |
 
-Suggested extra mappings (LazyVim):
-
-```lua
-keys = {
-  { "<leader>ia", function() require("xcode-templates").suggest() end, desc = "AI Complete at Cursor" },
-  { "<leader>ia", function() require("xcode-templates").ask() end, mode = "x", desc = "AI Ask About Selection" },
-},
-```
-
-Configure under `ai.suggest`: `keymap` (default `<C-x><C-a>`, `false` to disable),
-`max_tokens` (4096), `context_before` (120 lines), `context_after` (40 lines).
 Suggestions are manual-trigger by design — no keystroke-by-keystroke API calls.
 
 ### 🎤 Voice questions & the answer float
@@ -221,11 +232,9 @@ Suggestions are manual-trigger by design — no keystroke-by-keystroke API calls
 `:XcodeVoice` toggles microphone capture (start → speak → trigger again to stop).
 The transcript is asked about the code around your cursor, and the answer opens in
 a **movable, persistent float** — your file is never modified. `:XcodeHow [question]`
-is the typed equivalent.
-
-In the float: **arrow keys move it** around your editor · **`o` pops it out into a
-native TextEdit window you can drag to any screen/monitor** · `y` yanks · `q` closes.
-It stays open while you keep coding.
+is the typed equivalent. A top-right status float shows what's happening the whole
+time: live transcript or recording timer while you speak, then an animated
+**✻ asking Claude** spinner until the answer lands.
 
 Voice needs local speech-to-text (the Claude API is text-only). Two backends,
 picked automatically (`ai.voice.mode = "auto"`):
@@ -243,15 +252,58 @@ picked automatically (`ai.voice.mode = "auto"`):
 
 macOS asks for microphone permission for your terminal on first use.
 
+## ⌨️ AI keybindings
+
+### Ctrl bindings (swift buffers, insert + normal mode)
+
+`Ctrl-x` is Vim's completion prefix, so the AI chords live there — usable
+mid-typing without leaving insert mode. All configurable / disable with `false`.
+
+| Keys | Option | What it does |
+|---|---|---|
+| `Ctrl-x` `Ctrl-a` | `ai.suggest.keymap` | ghost-text completion at the cursor / implement the comment above it (**a**i) |
+| `Ctrl-x` `Ctrl-h` | `ai.keymaps.how` | ask a typed question → answer float (**h**ow) |
+| `Ctrl-x` `Ctrl-v` | `ai.keymaps.voice` | toggle a voice question (**v**oice) |
+
+### Commands
+
+| Command | Mode | What it does |
+|---|---|---|
+| `:XcodeSuggest` | — | same as `Ctrl-x Ctrl-a` |
+| `:'<,'>XcodeAI [instruction]` | visual range | act on the selection (review / implement / refactor / custom); prompts when the instruction is omitted |
+| `:XcodeHow [question]` | — | typed question about the code around the cursor → answer float |
+| `:XcodeVoice` | — | toggle voice capture → transcript becomes the question → answer float |
+| `:XcodeTemplate ai-suggest` | — | AI-draft a whole new file |
+
+### While a ghost suggestion is visible
+
+| Key | Action |
+|---|---|
+| `<Tab>` | accept — insert the suggestion at the cursor |
+| `<C-e>` | dismiss |
+| any edit / cursor move | dismiss |
+
+### Inside an answer float
+
+| Key | Action |
+|---|---|
+| `←` `↑` `↓` `→` | move the float around the editor |
+| `o` | pop out into a native TextEdit window (draggable to any screen) |
+| `a` | apply as replacement *(selection answers only)* |
+| `y` | yank the answer |
+| `q` / `<Esc>` | close |
+
+### Suggested LazyVim spec (all of the above under `<leader>i`)
+
 ```lua
 keys = {
+  { "<leader>in", function() require("xcode-templates").new() end, desc = "New File from Template" },
+  { "<leader>ia", function() require("xcode-templates").suggest() end, desc = "AI Complete at Cursor" },
+  { "<leader>ia", function() require("xcode-templates").ask() end, mode = "x", desc = "AI Ask About Selection" },
   { "<leader>iv", function() require("xcode-templates").voice() end, desc = "AI Voice Question" },
   { "<leader>iw", function() require("xcode-templates").how() end, desc = "AI How Do I…" },
 },
-``` Choosing it inserts the Xcode header plus a placeholder,
-then asynchronously asks Claude to draft the file using the file name, the detected
-intent (`FooViewModel` → view model, etc.), the project name, and the names of the
-sibling Swift files in the folder. `:XcodeTemplate ai-suggest` triggers it directly.
+```
 
 Security notes: the key is read lazily, never stored on disk by the plugin, and is
 passed to `curl` via stdin so it never appears in the process list. Only file *names*

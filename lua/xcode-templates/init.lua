@@ -676,19 +676,27 @@ function M.setup(opts)
     })
   end
 
-  if M.config.ai.suggest.keymap then
-    vim.api.nvim_create_autocmd("FileType", {
-      group = group,
-      pattern = "swift",
-      desc = "AI completion keymap for swift buffers",
-      callback = function(ev)
-        vim.keymap.set({ "i", "n" }, M.config.ai.suggest.keymap, M.suggest, {
-          buffer = ev.buf,
-          desc = "AI: complete at cursor",
-        })
-      end,
-    })
-  end
+  vim.api.nvim_create_autocmd("FileType", {
+    group = group,
+    pattern = "swift",
+    desc = "AI keymaps for swift buffers",
+    callback = function(ev)
+      local function bmap(lhs, fn, desc)
+        if lhs then
+          vim.keymap.set({ "i", "n" }, lhs, fn, { buffer = ev.buf, desc = desc })
+        end
+      end
+      bmap(M.config.ai.suggest.keymap, M.suggest, "AI: complete at cursor")
+      bmap(M.config.ai.keymaps.how, function()
+        vim.cmd.stopinsert()
+        M.how()
+      end, "AI: ask how (answer float)")
+      bmap(M.config.ai.keymaps.voice, function()
+        vim.cmd.stopinsert()
+        M.voice()
+      end, "AI: voice question")
+    end,
+  })
 
   vim.api.nvim_create_user_command("XcodeSuggest", function()
     M.suggest()
