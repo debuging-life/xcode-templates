@@ -306,6 +306,13 @@ function M.create(template, path, options)
     Pbxproj.add(full, template.target == "test" and "test" or "app")
   end
   refresh_explorers()
+  if not M._lsp_hint_shown and full:match("%.swift$") and Pbxproj.find_pbxproj(full) then
+    M._lsp_hint_shown = true
+    vim.notify(
+      "xcode-templates: sourcekit-lsp indexes new files after a build — run one (<leader>ib) then :LspRestart for full completions",
+      vim.log.levels.INFO
+    )
+  end
   return buf
 end
 
