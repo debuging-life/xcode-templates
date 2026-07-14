@@ -100,6 +100,112 @@ return {
 ```
 </details>
 
+## 🛠️ Full Xcode ⌁ Neovim setup (from zero)
+
+This plugin creates the files; the stack below gives you completions,
+diagnostics, and build/run so you never need the Xcode editor. One-time machine
+setup, then a 60-second checklist per project.
+
+### 1. Machine setup (once)
+
+Prerequisites: full **Xcode** (not just Command Line Tools), **Neovim ≥ 0.10**
+(examples assume [LazyVim](https://lazyvim.org)), a Nerd Font terminal.
+
+```bash
+brew install xcode-build-server xcbeautify   # LSP bridge + pretty build logs
+sudo xcode-select -s /Applications/Xcode.app # only if `xcrun --find sourcekit-lsp` fails
+```
+
+`sourcekit-lsp` itself ships inside Xcode — nothing to install.
+
+### 2. Neovim config (once)
+
+`~/.config/nvim/lua/plugins/swift.lua` — LSP, tree-sitter, and build/run:
+
+```lua
+return {
+  -- sourcekit-lsp from the Xcode toolchain (do NOT install via Mason)
+  {
+    "neovim/nvim-lspconfig",
+    opts = {
+      servers = {
+        sourcekit = {
+          cmd = { vim.trim(vim.fn.system("xcrun --find sourcekit-lsp")) },
+          filetypes = { "swift", "objc", "objcpp" },
+        },
+      },
+    },
+  },
+  -- swift syntax highlighting
+  { "nvim-treesitter/nvim-treesitter", opts = { ensure_installed = { "swift" } } },
+  -- build / run / test / simulator picker
+  {
+    "wojciech-kulik/xcodebuild.nvim",
+    dependencies = { "nvim-telescope/telescope.nvim", "MunifTanjim/nui.nvim" },
+    ft = { "swift" },
+    config = function() require("xcodebuild").setup({}) end,
+    keys = {
+      { "<leader>ib", "<cmd>XcodebuildBuild<cr>", desc = "Build" },
+      { "<leader>ir", "<cmd>XcodebuildBuildRun<cr>", desc = "Build & Run" },
+      { "<leader>it", "<cmd>XcodebuildTest<cr>", desc = "Run Tests" },
+      { "<leader>id", "<cmd>XcodebuildSelectDevice<cr>", desc = "Pick Simulator" },
+      { "<leader>is", "<cmd>XcodebuildSelectScheme<cr>", desc = "Pick Scheme" },
+      { "<leader>il", "<cmd>XcodebuildToggleLogs<cr>", desc = "Toggle Logs" },
+      { "<leader>ip", "<cmd>XcodebuildPicker<cr>", desc = "All Xcode Actions" },
+    },
+  },
+}
+```
+
+Then install **this plugin** (spec in [Install](#-install) above) and, for the AI
+features, authenticate once (see [AI Suggestions](#-ai-suggestions)) and
+optionally `brew install sox whisper-cpp` for voice.
+
+### 3. Per-project checklist (once per Xcode project)
+
+1. Create the project in Xcode as usual (signing & provisioning stay in Xcode).
+2. Open Neovim **in the project root** (the folder containing `.xcodeproj`) and
+   open any `.swift` file.
+3. Run `:XcodebuildSetup` — interactive picker for project file, scheme, and
+   simulator. It also generates **`buildServer.json`**, the bridge that feeds
+   Xcode's build settings (search paths, frameworks, SPM deps) to sourcekit-lsp.
+   Manual alternative:
+   ```bash
+   xcode-build-server config -project MyApp.xcodeproj -scheme MyApp
+   # or, for CocoaPods / multi-project setups:
+   xcode-build-server config -workspace MyApp.xcworkspace -scheme MyApp
+   ```
+4. Build once (`<leader>ib`) — the LSP reads compiler flags from build logs.
+5. `:LspRestart`.
+
+Completions, go-to-definition, and diagnostics now work for your own types,
+Apple frameworks, and SPM/CocoaPods dependencies — and every file this plugin
+creates gets full LSP support immediately.
+
+**Swift Packages need none of this** — sourcekit-lsp auto-discovers
+`Package.swift`. (`.playground` files don't work outside Xcode; use an
+executable package for scratch work: `swift package init --type executable`.)
+
+### How the pieces fit
+
+| File | Purpose |
+|---|---|
+| `<project>/buildServer.json` | feeds Xcode build settings to sourcekit-lsp (per project; gitignore it) |
+| `<project>/.nvim/xcodebuild/settings.json` | selected scheme/simulator (per project; gitignore it) |
+| `<project>/.nvim/xcodebuild/xcodebuild.log` | last build log (`<leader>il`) |
+| `<project>.xcodeproj/project.pbxproj` | Xcode 16 *synchronized folders* pick up created files automatically; older group-based projects are handled by this plugin via the `xcodeproj` gem (`add_to_project`) |
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Completions empty for your own types | build once (`<leader>ib`), then `:LspRestart` |
+| Stale after adding a dependency/target | re-run `xcode-build-server config …`, build, `:LspRestart` |
+| Broken after switching scheme | logs are per-scheme: `:XcodebuildSetup`, rebuild, `:LspRestart` |
+| LSP not attached | `:LspInfo` — the root dir must contain `buildServer.json`; check `:LspLog` |
+| Toolchain sanity | `xcrun --find sourcekit-lsp` · `xcode-build-server --help` · `xcodebuild -version` |
+| Plugin features | `:checkhealth xcode-templates` |
+
 ## 🕹️ Usage
 
 | Trigger | Behavior |
