@@ -272,6 +272,9 @@ opts = {
   },
   add_to_project = true,        -- register files in old-style (non-synchronized) pbxproj
   sync_header_on_rename = true, -- keep `//  File.swift` in sync after renames
+  lsp_restart_on_build = true,  -- restart sourcekit-lsp after successful xcodebuild.nvim builds
+  auto_index_build = true,      -- silent background xcodebuild after creating a file, so new
+                                -- types resolve everywhere within seconds (what Xcode does invisibly)
   ai = {
     enabled = true,             -- show the ✻ AI Suggestion template when a key is available
     api_key = nil,              -- string or function; default: $ANTHROPIC_API_KEY

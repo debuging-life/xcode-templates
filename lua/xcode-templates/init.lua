@@ -81,6 +81,81 @@ local function ensure_normal_window()
   vim.cmd("botright vsplit")
 end
 
+---Restart sourcekit-lsp so it re-reads compiler arguments from fresh build logs.
+local function restart_sourcekit()
+  vim.defer_fn(function()
+    local ok = pcall(vim.cmd, "LspRestart sourcekit")
+    if not ok then
+      for _, client in ipairs(vim.lsp.get_clients({ name = "sourcekit" })) do
+        client:stop()
+      end
+    end
+  end, 300)
+end
+
+---Silent background build after creating a file — what Xcode does invisibly.
+---On success the LSP restarts, so the new file's types resolve everywhere
+---without the user pressing anything.
+---@param pbx string path to project.pbxproj
+---@return boolean started
+local function index_build(pbx)
+  if M._index_building then
+    return true
+  end
+  local root = vim.fs.dirname(vim.fs.dirname(pbx))
+  local container, scheme, platform
+  local sf = io.open(root .. "/.nvim/xcodebuild/settings.json", "r")
+  if sf then
+    local ok, s = pcall(vim.json.decode, sf:read("*a"))
+    sf:close()
+    if ok and type(s) == "table" then
+      container = s.workspaceFile or s.projectFile or s.xcodeproj
+      scheme = s.scheme
+      platform = s.platform
+    end
+  end
+  if not scheme then
+    local bf = io.open(root .. "/buildServer.json", "r")
+    if bf then
+      local ok, b = pcall(vim.json.decode, bf:read("*a"))
+      bf:close()
+      if ok and type(b) == "table" then
+        scheme = b.scheme
+        container = container or b.workspace
+      end
+    end
+  end
+  if not scheme then
+    return false -- no scheme known yet (run :XcodebuildSetup once)
+  end
+  container = container or vim.fs.dirname(pbx)
+  M._index_building = true
+  local flag = container:match("%.xcworkspace$") and "-workspace" or "-project"
+  local dest = "generic/platform=" .. (platform or "iOS Simulator")
+  vim.notify("xcode-templates: ⚙ background index build…", vim.log.levels.INFO)
+  local ok = pcall(vim.system, { "xcodebuild", flag, container, "-scheme", scheme, "-destination", dest, "build" }, {
+    text = true,
+  }, function(res)
+    vim.schedule(function()
+      M._index_building = false
+      if res.code == 0 then
+        restart_sourcekit()
+        vim.notify("xcode-templates: ⚙ index updated — new types resolve everywhere", vim.log.levels.INFO)
+      else
+        vim.notify(
+          "xcode-templates: background index build failed — run a build (<leader>ib) to see the errors",
+          vim.log.levels.WARN
+        )
+      end
+    end)
+  end)
+  if not ok then
+    M._index_building = false
+    return false
+  end
+  return true
+end
+
 ---Explorers don't watch for files created outside their own actions —
 ---nudge any open one to reload after we write a file to disk.
 local function refresh_explorers()
@@ -306,12 +381,18 @@ function M.create(template, path, options)
     Pbxproj.add(full, template.target == "test" and "test" or "app")
   end
   refresh_explorers()
-  if not M._lsp_hint_shown and full:match("%.swift$") and Pbxproj.find_pbxproj(full) then
-    M._lsp_hint_shown = true
-    vim.notify(
-      "xcode-templates: sourcekit-lsp indexes new files after a build — run one (<leader>ib) then :LspRestart for full completions",
-      vim.log.levels.INFO
-    )
+  if full:match("%.swift$") then
+    local pbx = Pbxproj.find_pbxproj(full)
+    if pbx then
+      local building = M.config.auto_index_build and index_build(pbx)
+      if not building and not M._lsp_hint_shown then
+        M._lsp_hint_shown = true
+        vim.notify(
+          "xcode-templates: sourcekit-lsp indexes new files after a build — run one (<leader>ib) for full completions",
+          vim.log.levels.INFO
+        )
+      end
+    end
   end
   return buf
 end
@@ -700,14 +781,7 @@ function M.setup(opts)
         if type(ev.data) == "table" and ev.data.success == false then
           return -- failed build: stale args would stay stale anyway
         end
-        vim.defer_fn(function()
-          local ok = pcall(vim.cmd, "LspRestart sourcekit")
-          if not ok then
-            for _, client in ipairs(vim.lsp.get_clients({ name = "sourcekit" })) do
-              client:stop()
-            end
-          end
-        end, 300)
+        restart_sourcekit()
       end,
     })
   end
