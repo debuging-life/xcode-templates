@@ -691,6 +691,27 @@ function M.setup(opts)
     end,
   })
 
+  if M.config.lsp_restart_on_build then
+    vim.api.nvim_create_autocmd("User", {
+      group = group,
+      pattern = "XcodebuildBuildFinished",
+      desc = "Restart sourcekit-lsp after a build so new files/types resolve",
+      callback = function(ev)
+        if type(ev.data) == "table" and ev.data.success == false then
+          return -- failed build: stale args would stay stale anyway
+        end
+        vim.defer_fn(function()
+          local ok = pcall(vim.cmd, "LspRestart sourcekit")
+          if not ok then
+            for _, client in ipairs(vim.lsp.get_clients({ name = "sourcekit" })) do
+              client:stop()
+            end
+          end
+        end, 300)
+      end,
+    })
+  end
+
   if M.config.sync_header_on_rename then
     vim.api.nvim_create_autocmd({ "BufFilePost", "BufWritePre" }, {
       group = group,

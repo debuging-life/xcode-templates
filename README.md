@@ -199,8 +199,9 @@ executable package for scratch work: `swift package init --type executable`.)
 
 | Symptom | Fix |
 |---|---|
-| Completions empty for your own types | build once (`<leader>ib`), then `:LspRestart` |
-| Stale after adding a dependency/target | re-run `xcode-build-server config …`, build, `:LspRestart` |
+| Completions empty for your own types | build once (`<leader>ib`) — this plugin auto-restarts sourcekit-lsp after successful builds (`lsp_restart_on_build`) |
+| "Cannot find type 'X' in scope" for a type in a *new* file | same: build once — other files' compiler args don't include a new file until the next build |
+| Stale after adding a dependency/target | re-run `xcode-build-server config …`, then build |
 | Broken after switching scheme | logs are per-scheme: `:XcodebuildSetup`, rebuild, `:LspRestart` |
 | LSP not attached | `:LspInfo` — the root dir must contain `buildServer.json`; check `:LspLog` |
 | Toolchain sanity | `xcrun --find sourcekit-lsp` · `xcode-build-server --help` · `xcodebuild -version` |
