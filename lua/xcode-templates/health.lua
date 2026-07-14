@@ -58,12 +58,24 @@ function M.check()
     )
   end
 
-  local vcmd = config.ai.voice.command
-  vcmd = type(vcmd) == "table" and vcmd[1] or vcmd
-  if vim.fn.executable(vcmd) == 1 then
-    health.ok(("voice input available (`%s`)"):format(vcmd))
+  local Voice = require("xcode-templates.voice")
+  local vmode = Voice.mode(config)
+  if vmode == "record" then
+    local model = Voice.model_path(config)
+    local have_model = (vim.uv or vim.loop).fs_stat(model) ~= nil
+    health.ok(("voice input: whisper record mode (model: %s%s)"):format(
+      config.ai.voice.model,
+      have_model and "" or " — downloads on first use"
+    ))
   else
-    health.info(("voice input: `%s` not found — macOS: `brew install hear` (or set `ai.voice.command`)"):format(vcmd))
+    local vcmd = config.ai.voice.command
+    vcmd = type(vcmd) == "table" and vcmd[1] or vcmd
+    if vim.fn.executable(vcmd) == 1 then
+      health.ok(("voice input: stream mode (`%s`)"):format(vcmd))
+      health.info("for better accuracy with accents: `brew install sox whisper-cpp` (auto-switches to whisper)")
+    else
+      health.info("voice input: no backend — `brew install sox whisper-cpp` (recommended)")
+    end
   end
 
   local ok, err = pcall(require("xcode-templates.config").validate, require("xcode-templates").config)

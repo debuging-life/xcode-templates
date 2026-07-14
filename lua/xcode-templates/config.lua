@@ -40,8 +40,13 @@ function M.defaults()
         context_after = 40, -- lines of code sent after the cursor
       },
       voice = {
-        -- speech-to-text CLI printing the transcript to stdout
-        -- (macOS: `brew install hear`; any whisper wrapper works too)
+        mode = "auto", -- "auto" | "record" (whisper, accurate) | "stream" (live text)
+        -- record backend (auto-picked when sox + whisper-cpp are installed):
+        record = { "sox", "-q", "-d", "-r", "16000", "-c", "1", "$FILE" },
+        transcribe = { "whisper-cli", "-m", "$MODEL", "-f", "$FILE", "-l", "$LANG", "-np", "-nt" },
+        model = "small", -- whisper model, auto-downloaded (tiny/base/small/medium)
+        language = "en",
+        -- stream backend fallback: CLI printing recognized text to stdout
         command = { "hear" },
       },
     },
@@ -95,6 +100,13 @@ function M.validate(cfg)
   if type(cfg.ai.voice.command) ~= "string" and type(cfg.ai.voice.command) ~= "table" then
     error("xcode-templates: option `ai.voice.command` must be a string or a list of arguments", 0)
   end
+  if not vim.tbl_contains({ "auto", "record", "stream" }, cfg.ai.voice.mode) then
+    error("xcode-templates: option `ai.voice.mode` must be auto/record/stream", 0)
+  end
+  check("ai.voice.record", cfg.ai.voice.record, "table")
+  check("ai.voice.transcribe", cfg.ai.voice.transcribe, "table")
+  check("ai.voice.model", cfg.ai.voice.model, "string")
+  check("ai.voice.language", cfg.ai.voice.language, "string")
   check("templates", cfg.templates, "table")
   if cfg.columns < 1 or cfg.columns > 6 then
     error("xcode-templates: option `columns` must be between 1 and 6", 0)

@@ -537,21 +537,50 @@ function M.voice()
     return Voice.stop()
   end
   local win = vim.api.nvim_get_current_win()
+  local timer
+  local function stop_timer()
+    if timer then
+      pcall(function()
+        timer:stop()
+        timer:close()
+      end)
+      timer = nil
+    end
+  end
   Voice.toggle(M.config, {
-    on_start = function()
+    on_start = function(mode)
       Progress.start({
         title = "🎤 listening",
-        text = "speak now…",
+        text = mode == "record" and "● recording…" or "speak now…",
         hint = "trigger again to stop",
       })
+      if mode == "record" then
+        -- whisper transcribes on stop, so show elapsed time while recording
+        local secs = 0
+        timer = (vim.uv or vim.loop).new_timer()
+        timer:start(1000, 1000, vim.schedule_wrap(function()
+          secs = secs + 1
+          Progress.update(("● recording — %d:%02d  (whisper transcribes when you stop)"):format(
+            math.floor(secs / 60),
+            secs % 60
+          ))
+        end))
+      end
     end,
     on_partial = function(text)
-      Progress.update(text) -- live transcription while you speak
+      Progress.update(text) -- live transcription (stream backend)
+    end,
+    on_phase = function()
+      stop_timer()
+      Progress.retitle("✻ transcribing (whisper)")
+      Progress.update("…")
     end,
     on_error = function()
+      stop_timer()
       Progress.stop()
     end,
     on_transcript = function(text)
+      stop_timer()
       if vim.api.nvim_win_is_valid(win) then
         vim.api.nvim_set_current_win(win)
       end
@@ -592,6 +621,23 @@ end
 ---@param opts XcodeTemplates.Config|nil
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", Config.defaults(), opts or {})
+  -- list-valued options replace the default outright (deep_extend would
+  -- merge them element-wise with the default list)
+  for _, path in ipairs({
+    { "templates" },
+    { "ai", "voice", "record" },
+    { "ai", "voice", "transcribe" },
+    { "ai", "voice", "command" },
+  }) do
+    local user_value = vim.tbl_get(opts or {}, unpack(path))
+    if user_value ~= nil then
+      local node = M.config
+      for i = 1, #path - 1 do
+        node = node[path[i]]
+      end
+      node[path[#path]] = user_value
+    end
+  end
   Config.validate(M.config)
 
   local group = vim.api.nvim_create_augroup("xcode_templates", { clear = true })

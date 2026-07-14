@@ -227,15 +227,21 @@ In the float: **arrow keys move it** around your editor · **`o` pops it out int
 native TextEdit window you can drag to any screen/monitor** · `y` yanks · `q` closes.
 It stays open while you keep coding.
 
-Voice needs a local speech-to-text CLI (the Claude API is text-only). On macOS:
+Voice needs local speech-to-text (the Claude API is text-only). Two backends,
+picked automatically (`ai.voice.mode = "auto"`):
 
-```bash
-brew install hear   # Apple's on-device speech recognition as a CLI
-```
+- **whisper (recommended — much better with accents):**
+  ```bash
+  brew install sox whisper-cpp
+  ```
+  Records while you speak (the status float shows a timer), transcribes when you
+  stop. The whisper model (`ai.voice.model`, default `small`) downloads
+  automatically on first use. `ai.voice.language` defaults to `"en"`.
+- **stream** (live words while speaking, weaker accuracy): any CLI that prints
+  recognized text to stdout via `ai.voice.command` — e.g.
+  [`hear`](https://github.com/sveinbjornt/hear) (macOS on-device speech).
 
-macOS will ask for microphone + speech-recognition permission for your terminal on
-first use. Any other transcriber that prints text to stdout works via
-`ai.voice.command` (e.g. a whisper-cpp wrapper).
+macOS asks for microphone permission for your terminal on first use.
 
 ```lua
 keys = {

@@ -97,7 +97,20 @@ Inline assistance (same credentials):
     fix / custom instruction; prompts when omitted). The answer opens in a
     float: `a` replaces the selection with it, `y` yanks it, `q` closes.
 
-require("xcode-templates").suggest()  and  .ask({instruction}?, {srow}?, {erow}?)
+:XcodeVoice
+    Toggle voice capture. Backend picked by ai.voice.mode="auto": whisper
+    record mode when sox + whisper-cpp are installed (best accuracy for
+    accented speech; the model auto-downloads; the status float shows a
+    recording timer, then a transcribing phase) — otherwise a streaming
+    CLI (ai.voice.command, live words while speaking). The transcript is
+    asked about the code around the cursor; the answer opens in a movable
+    float. Answer floats: arrow keys move · `o` pops out to a native
+    window · `y` yanks · `q` closes.
+
+:XcodeHow [{question}]
+    Typed variant of :XcodeVoice — same float, no microphone.
+
+require("xcode-templates").suggest(), .ask(...), .voice(), .how({q}?)
     are the corresponding Lua entry points for custom mappings.
 
 ==============================================================================
